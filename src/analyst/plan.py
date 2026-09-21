@@ -13,11 +13,17 @@ Return a JSON object with:
 """
 
 
-def make_plan(question: str, llm: OpenRouterLLM) -> dict:
+def make_plan(question: str, llm: OpenRouterLLM, remembered: list[str] | None = None) -> dict:
+    extra = ""
+    if remembered:
+        extra = (
+            "\nAlready audited facts (verify or extend, do not rediscover):\n"
+            + "\n".join(f"- {item}" for item in remembered)
+        )
     payload, _cost = llm.complete_json(
         [
             {"role": "system", "content": PLAN_INSTRUCTIONS},
-            {"role": "user", "content": question},
+            {"role": "user", "content": question + extra},
         ],
         purpose="plan",
     )

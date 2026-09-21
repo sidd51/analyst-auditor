@@ -1,0 +1,6 @@
+{"ts": "2026-09-21T21:30:31.253049+00:00", "event": "tool_call", "tool": "fetch_page", "url": "https://en.wikipedia.org/wiki/Titan_Company", "who": "auditor"}
+{"ts": "2026-09-21T21:30:33.597869+00:00", "event": "tool_result", "tool": "fetch_page", "who": "auditor", "url": "https://en.wikipedia.org/wiki/Titan_Company", "ok": true}
+{"ts": "2026-09-21T21:30:33.598195+00:00", "event": "llm_request", "purpose": "audit", "model": "openai/gpt-4o-mini", "json_mode": true, "message_count": 2}
+{"ts": "2026-09-21T21:30:36.309308+00:00", "event": "llm_response", "purpose": "audit", "model": "openai/gpt-4o-mini", "generation_id": "gen-1790026234-2ep2NzBQkh7WFHOks7cT", "prompt_tokens": 902, "completion_tokens": 31, "cost_usd": 0.0001539, "cost_inr": 0.014739002999999999, "chars": 107}
+{"ts": "2026-09-21T21:30:36.309990+00:00", "event": "audit", "verdict": "supported", "reason": "The page clearly states Ajoy Chawla is the MD of Titan Company.", "claim": "Ajoy Chawla is the MD of Titan Company."}
+{"ts": "2026-09-21T21:30:36.311406+00:00", "event": "audit", "verdict": "uncited", "claim": "The current MD or CEO of Titan Company is not mentioned."}

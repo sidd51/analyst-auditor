@@ -7,11 +7,15 @@ from src.analyst.run_searches import run_searches
 from src.config import load_settings
 from src.llm import OpenRouterLLM
 from src.trace import Tracer
+from src.memory.store import remembered_texts
 
 
 def ask(question: str, llm: OpenRouterLLM, tracer: Tracer) -> dict:
     tracer.event("question", text=question)
-    plan = make_plan(question, llm)
+    remembered = remembered_texts()
+    if remembered:
+      tracer.event("memory_loaded", facts=remembered)
+    plan = make_plan(question, llm, remembered=remembered)
     tracer.event("plan", plan=plan)
     hits = run_searches(plan, tracer)
     pages = run_fetches(unique_urls(hits), tracer)
