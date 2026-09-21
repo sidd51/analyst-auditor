@@ -1,0 +1,10 @@
+{"ts": "2026-09-21T18:55:40.792920+00:00", "event": "llm_request", "purpose": "plan", "model": "openai/gpt-4o-mini", "json_mode": true, "message_count": 2}
+{"ts": "2026-09-21T18:55:42.990567+00:00", "event": "llm_response", "purpose": "plan", "model": "openai/gpt-4o-mini", "generation_id": "gen-1790016941-xoGMwvg6g4ZU14aSItW7", "prompt_tokens": 92, "completion_tokens": 68, "cost_usd": 5.46e-05, "cost_inr": 0.005229042, "chars": 308}
+{"ts": "2026-09-21T18:55:42.993476+00:00", "event": "tool_call", "tool": "web_search", "query": "current CEO of Titan Company 2023"}
+{"ts": "2026-09-21T18:55:47.510076+00:00", "event": "tool_result", "tool": "web_search", "query": "current CEO of Titan Company 2023", "n": 3, "urls": ["https://en.wikipedia.org/wiki/Titan_Company", "https://www.titancompany.in/node/2412", "https://www.linkedin.com/in/jaime-zawmon-b861731"]}
+{"ts": "2026-09-21T18:55:47.511421+00:00", "event": "tool_call", "tool": "web_search", "query": "Titan Company leadership team"}
+{"ts": "2026-09-21T18:55:49.964444+00:00", "event": "course_change", "reason": "search returned no hits, trying the next query", "query": "Titan Company leadership team"}
+{"ts": "2026-09-21T18:55:49.964714+00:00", "event": "tool_result", "tool": "web_search", "query": "Titan Company leadership team", "n": 0, "urls": []}
+{"ts": "2026-09-21T18:55:49.966220+00:00", "event": "tool_call", "tool": "web_search", "query": "Titan Company management structure"}
+{"ts": "2026-09-21T18:55:52.311062+00:00", "event": "course_change", "reason": "search returned no hits, trying the next query", "query": "Titan Company management structure"}
+{"ts": "2026-09-21T18:55:52.311383+00:00", "event": "tool_result", "tool": "web_search", "query": "Titan Company management structure", "n": 0, "urls": []}
