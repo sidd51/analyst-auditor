@@ -1,2 +1,0 @@
-{"ts": "2026-09-21T17:37:16.835740+00:00", "event": "llm_request", "purpose": "plan", "model": "openai/gpt-4o-mini", "json_mode": true, "message_count": 2}
-{"ts": "2026-09-21T17:37:21.365982+00:00", "event": "llm_response", "purpose": "plan", "model": "openai/gpt-4o-mini", "generation_id": "gen-1790012238-tt6w5gfvPBRYP8x5uGba", "prompt_tokens": 92, "completion_tokens": 68, "cost_usd": 5.46e-05, "cost_inr": 0.005229042, "chars": 308}

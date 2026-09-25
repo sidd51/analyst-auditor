@@ -1,63 +1,49 @@
-"""Turn one OpenRouter response into tokens + rupees.
-
-OpenRouter puts `usage.cost` on every reply. That number is USD charged to the
-account (1 credit = 1 USD). We multiply by the frozen USD_INR_RATE in .env so
-the eight-question table is comparable even if FX moves later.
-"""
+"""Convert model token usage into a transparent USD and INR estimate."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass
+
+from src.config import Settings
 
 
-@dataclass
+@dataclass(frozen=True)
 class CostRecord:
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cost_usd: float = 0.0
-    model: str = ""
-    generation_id: str = ""
+    """Usage and estimated price for one model call."""
 
-    @property
-    def total_tokens(self) -> int:
-        return self.prompt_tokens + self.completion_tokens
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cost_usd: float
+    cost_inr: float
 
-    def cost_inr(self, usd_inr_rate: float) -> float:
-        return self.cost_usd * usd_inr_rate
-
-    def add(self, other: CostRecord) -> None:
-        self.prompt_tokens += other.prompt_tokens
-        self.completion_tokens += other.completion_tokens
-        self.cost_usd += other.cost_usd
+    def as_dict(self) -> dict[str, int | float]:
+        """Return JSON-safe data for traces and final reports."""
+        return asdict(self)
 
 
-@dataclass
-class CostAccumulator:
-    """One of these per question. The eval harness will print Q1..Q8 from it."""
+def calculate_cost(
+    input_tokens: int,
+    output_tokens: int,
+    settings: Settings,
+) -> CostRecord:
+    """Calculate cost from the frozen rates stored in `.env`.
 
-    usd_inr_rate: float
-    items: list[CostRecord] = field(default_factory=list)
+    We freeze rates before the final Q1–Q8 run so every question uses the same
+    exchange rate and model prices. This makes the cost trend comparable.
+    """
+    input_usd = (
+        input_tokens / 1_000_000
+    ) * settings.input_usd_per_million
+    output_usd = (
+        output_tokens / 1_000_000
+    ) * settings.output_usd_per_million
+    cost_usd = input_usd + output_usd
 
-    def add(self, record: CostRecord) -> None:
-        self.items.append(record)
-
-    @property
-    def total(self) -> CostRecord:
-        out = CostRecord()
-        for item in self.items:
-            out.add(item)
-        if self.items:
-            out.model = self.items[-1].model
-        return out
-
-    def as_dict(self) -> dict:
-        total = self.total
-        return {
-            "prompt_tokens": total.prompt_tokens,
-            "completion_tokens": total.completion_tokens,
-            "total_tokens": total.total_tokens,
-            "cost_usd": round(total.cost_usd, 6),
-            "cost_inr": round(total.cost_inr(self.usd_inr_rate), 4),
-            "usd_inr_rate": self.usd_inr_rate,
-            "calls": len(self.items),
-        }
+    return CostRecord(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
+        cost_usd=round(cost_usd, 8),
+        cost_inr=round(cost_usd * settings.usd_inr_rate, 6),
+    )

@@ -50,3 +50,5 @@ So: yes, a blunt cap loses context. No, unlimited text is not the fix because co
 Only when the cost was not an issue, I wished to send full pages as context to avoid the not-found message to user.
 
 ### I am doing parallel fetch using ThreadPoolExecutor
+
+## I am restarting the project there were too many shortcoming in the previous architecture

@@ -10,3 +10,4 @@ plan.md
 
 # Runtime memory is rebuilt by eval. Keep the folder, not a secret dump.
 data/memory.json
+data/last_answer.json

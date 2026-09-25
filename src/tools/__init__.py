@@ -1,1 +1,1 @@
-# Search and fetch tools live in this folder.
+"""Web tools live here later: search, fetch, retrieve."""

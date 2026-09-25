@@ -1,6 +1,14 @@
-openai>=1.40.0
 python-dotenv>=1.0.1
+langchain-openai>=0.3.0
+langchain-core>=0.3.0
+langchain-text-splitters>=0.3.0
+tavily-python>=0.7.0
+pydantic>=2.9.0
 httpx>=0.27.0
+trafilatura>=2.0.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
+lxml-html-clean>=0.4.0
 ddgs>=9.0.0
+pypdf>=5.0.0
+pytest>=8.0.0

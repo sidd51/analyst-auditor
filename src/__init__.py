@@ -1,1 +1,1 @@
-"""Analyst + Auditor research agents (Thuli Studios take-home)."""
+"""Analyst + Auditor take-home. Built step by step."""
