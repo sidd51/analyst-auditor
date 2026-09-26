@@ -21,6 +21,16 @@ class CostRecord:
         """Return JSON-safe data for traces and final reports."""
         return asdict(self)
 
+    def plus(self, other: CostRecord) -> CostRecord:
+        """Add two call costs. Used when Analyst runs a second gap pass."""
+        return CostRecord(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            total_tokens=self.total_tokens + other.total_tokens,
+            cost_usd=round(self.cost_usd + other.cost_usd, 8),
+            cost_inr=round(self.cost_inr + other.cost_inr, 6),
+        )
+
 
 def calculate_cost(
     input_tokens: int,

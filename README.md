@@ -149,7 +149,7 @@ The run is written to `logs/step4-collect.jsonl`.
 
 ## Step 4D — Analyst claims
 
-This command makes three paid OpenRouter calls, then live search and fetch:
+This command makes up to six paid OpenRouter calls, then live search and fetch:
 
 ```bash
 python -m src.analyze \
@@ -163,7 +163,35 @@ opened/added number is still a claim even if a ranking cannot be finished.
 Plans and guesses are not claims. Missing required fields and missing rank
 slots are listed as `unanswered`. Python drops any draft whose quote is not
 in the cited passage and keeps at most three short notes. Completeness is
-not decided here. The run is written to `logs/step4-analyze.jsonl`.
+not decided here. If a required field is still unanswered and leftover
+search URLs remain, Python fetches the next 4 of those URLs (no new
+search), retrieves passages for the gap, and runs one more Analyst pass.
+Claims are merged, then the pipeline continues once. Easy questions that
+already cover every required field stay at five model calls. After that,
+single-domain claims are
+cross-checked with one dedicated search and one independent fetch. A
+wave-1 page is reused only when search selects that same URL and the
+page is long enough. Contact-DB hosts, `/error-page` URLs, and almost
+empty pages are skipped. The judge may use only the independent passage,
+not the Analyst quote. Labels become `corroborated`, `single_source`, or
+`conflicting`. After that, the Auditor refetches every unique cited URL
+without using the Analyst page cache, retrieves fresh passages scored on
+the claim text (not the quote), and judges each (claim, source) pair in
+one batched call. Python rolls those notes up: `SUPPORTED` if at least
+one cited source supports and none contradict, `UNSUPPORTED` if none
+support, `CONTRADICTED` if a cited source disagrees on the same fact,
+and `UNCITED` if there are no URLs. A silent or failed page is not a
+conflict. Python then builds the user-facing answer: only `SUPPORTED`
+claims are shown, with short citation labels. Required fields with no
+verified claim, plus ranking slots that are short, go under `Missing`.
+`CONTRADICTED` claims and cross-check `conflicting` labels go under
+`Disputed`. `Answer (complete)` is printed only when every required
+field survived and nothing is disputed. There is no extra model call.
+Python then writes entity memory to `data/memory.json`: accepted facts
+(including tagged `single_source` rows), plus `disputed` / `rejected`
+notes. Whole answers are never stored. The next plan only sees facts
+for entities named in that question. Disputed fields are not treated
+as known. The run is written to `logs/step4-analyze.jsonl`.
 
 ## What stays out of this setup
 

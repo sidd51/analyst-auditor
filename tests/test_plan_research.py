@@ -121,8 +121,9 @@ def test_planner_skips_known_facts_in_the_prompt() -> None:
 
     assert llm.calls == 1
     assert "Titan Company's MD is Ajoy Chawla" in llm.user_prompt
-    assert "do not research these" in llm.user_prompt.casefold() or (
-        "Known facts (do not research these)" in llm.user_prompt
+    assert "Known facts (do not research these)" in llm.user_prompt
+    assert "Disputed fields (do not treat as known; search again): none yet" in (
+        llm.user_prompt
     )
     assert result.value.known_facts == ["Titan Company's MD is Ajoy Chawla"]
     assert result.value.specified.page_policy.initial_pages == 5

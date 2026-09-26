@@ -7,7 +7,13 @@ import sys
 
 from src.config import Settings, load_settings
 from src.llm import OpenRouterLLM
-from src.models import CandidateUrl, EvidencePacket, ResearchPlan, SearchResponse
+from src.models import (
+    CandidateUrl,
+    EvidencePacket,
+    FetchResponse,
+    ResearchPlan,
+    SearchResponse,
+)
 from src.page_budget import next_fetch_wave
 from src.plan_research import plan_research
 from src.specify import specify_question
@@ -55,8 +61,8 @@ def collect_evidence(
 ) -> EvidencePacket:
     """Search sequentially, fetch wave 1, then keep only relevant passages.
 
-    Later waves stay unused until a future step can tell whether required
-    fields are already covered. This step never asks the model to fetch more.
+    Later leftovers stay in unused_urls. Wave 2 runs only after Analyst 1
+    if a required field is still missing.
     """
     searcher = searcher or WebSearch(settings, tracer)
     fetcher = fetcher or ParallelFetcher(settings, tracer)
@@ -111,6 +117,59 @@ def collect_evidence(
         passages_selected=retrieval.passages_selected,
     )
     return packet
+
+
+def collect_wave2(
+    packet: EvidencePacket,
+    settings: Settings,
+    tracer: JsonlTracer,
+    gap_fields: list[str],
+    *,
+    fetcher: ParallelFetcher | None = None,
+    retriever: PassageRetriever | None = None,
+) -> EvidencePacket:
+    """Fetch the next leftover pages. No new search. Stop after this wave."""
+    wave_size = next_fetch_wave(packet.pages_used, settings)
+    if wave_size <= 0 or not packet.unused_urls:
+        return packet
+
+    fetcher = fetcher or ParallelFetcher(settings, tracer)
+    retriever = retriever or PassageRetriever(settings, tracer)
+    fetched = fetcher.fetch_many(packet.unused_urls, page_limit=wave_size)
+    fetched_keys = {_url_key(page.url) for page in fetched.pages}
+    unused_urls = [
+        url for url in packet.unused_urls if _url_key(url) not in fetched_keys
+    ]
+    pages_used = packet.pages_used + fetched.selected_count
+    merged = FetchResponse(
+        requested_count=packet.fetched.requested_count + fetched.requested_count,
+        selected_count=packet.fetched.selected_count + fetched.selected_count,
+        skipped_count=packet.fetched.skipped_count + fetched.skipped_count,
+        pages=[*packet.fetched.pages, *fetched.pages],
+    )
+    retrieval = retriever.retrieve(
+        fetched.pages,
+        question=packet.plan.specified.question,
+        requirements=gap_fields + packet.plan.specified.notes,
+    )
+    updated = packet.model_copy(
+        update={
+            "fetched": merged,
+            "retrieval": retrieval,
+            "pages_used": pages_used,
+            "next_wave_size": next_fetch_wave(pages_used, settings),
+            "unused_urls": unused_urls,
+        }
+    )
+    tracer.event(
+        "wave2_packet",
+        gap_fields=gap_fields,
+        pages_fetched=fetched.selected_count,
+        pages_used=pages_used,
+        unused_urls=unused_urls,
+        passages_selected=retrieval.passages_selected,
+    )
+    return updated
 
 
 def _parser() -> argparse.ArgumentParser:

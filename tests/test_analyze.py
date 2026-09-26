@@ -1,16 +1,25 @@
 """Offline tests for the fail-closed Analyst."""
 
-from src.analyze import analyze_evidence, finalize_analyst
+from src.analyze import (
+    analyze_evidence,
+    finalize_analyst,
+    merge_analyst_results,
+    missing_required_fields,
+    should_fetch_wave2,
+)
 from src.cost import CostRecord
 from src.llm import StructuredResult
 from src.models import (
+    AnalystClaim,
     AnalystDraft,
+    AnalystResult,
     DraftClaim,
     EvidencePacket,
     EvidencePassage,
     FetchResponse,
     ResearchPlan,
     RetrievalResponse,
+    UnansweredField,
 )
 from src.page_budget import page_policy_from_settings
 from src.models import QuestionSpecification, SpecifiedQuestion
@@ -220,3 +229,77 @@ def test_python_keeps_only_three_short_notes() -> None:
     assert len(result.notes) == 3
     assert "fourth note" not in " ".join(result.notes)
     assert all(len(note) <= 220 for note in result.notes)
+
+
+def test_wave2_is_skipped_when_required_fields_are_covered() -> None:
+    first = finalize_analyst(
+        packet(),
+        AnalystDraft(
+            claims=[
+                DraftClaim(
+                    field="full name",
+                    text="Ajoy Chawla is MD.",
+                    quote="Titan added only 19 new jewellery retail locations in Q1 FY26",
+                    passage_ids=["P0006"],
+                ),
+                DraftClaim(
+                    field="effective appointment date",
+                    text="Q1 FY26",
+                    quote="Titan added only 19 new jewellery retail locations in Q1 FY26",
+                    passage_ids=["P0006"],
+                ),
+            ]
+        ),
+    )
+    ready = packet()
+    ready.unused_urls = ["https://example.com/extra"]
+    ready.next_wave_size = 4
+    assert missing_required_fields(first, ready.plan.specified) == []
+    assert should_fetch_wave2(ready, first, valid_settings()) is False
+
+
+def test_wave2_runs_only_for_open_required_fields_with_leftovers() -> None:
+    first = finalize_analyst(packet(), AnalystDraft(claims=[]))
+    ready = packet()
+    ready.unused_urls = ["https://example.com/extra"]
+    ready.next_wave_size = 4
+    assert "full name" in missing_required_fields(first, ready.plan.specified)
+    assert should_fetch_wave2(ready, first, valid_settings()) is True
+    ready.unused_urls = []
+    assert should_fetch_wave2(ready, first, valid_settings()) is False
+
+
+def test_merge_appends_new_claims_and_drops_covered_gaps() -> None:
+    first = AnalystResult(
+        claims=[
+            AnalystClaim(
+                claim_id="C01",
+                field="full name",
+                text="Ajoy Chawla is MD.",
+                quote="Ajoy Chawla",
+                passage_ids=["P0001"],
+                urls=["https://example.com/a"],
+            )
+        ],
+        unanswered=[
+            UnansweredField(field="effective appointment date", reason="Not in wave 1.")
+        ],
+    )
+    second = AnalystResult(
+        claims=[
+            AnalystClaim(
+                claim_id="C01",
+                field="effective appointment date",
+                text="January 1, 2026",
+                quote="January 1, 2026",
+                passage_ids=["P0001"],
+                urls=["https://example.com/b"],
+            )
+        ]
+    )
+    merged = merge_analyst_results(first, second, packet(), valid_settings())
+    assert [item.claim_id for item in merged.claims] == ["C01", "C02"]
+    assert merged.claims[1].field == "effective appointment date"
+    assert not any(
+        item.field == "effective appointment date" for item in merged.unanswered
+    )

@@ -208,6 +208,8 @@ class ResearchPlan(BaseModel):
     specified: SpecifiedQuestion
     queries: list[PlannedQuery]
     known_facts: list[str] = Field(default_factory=list)
+    disputed_notes: list[str] = Field(default_factory=list)
+    rejected_notes: list[str] = Field(default_factory=list)
     truncated: bool = False
 
 
@@ -291,3 +293,159 @@ class AnalystResult(BaseModel):
     unanswered: list[UnansweredField] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     dropped_drafts: int = 0
+
+
+class CrossCheckVerdict(BaseModel):
+    """Label for a claim that had only one source domain."""
+
+    claim_id: str
+    status: Literal[
+        "corroborated",
+        "single_source",
+        "conflicting",
+        "skipped_multi_source",
+    ]
+    independent_url: str | None = None
+    reason: str = ""
+    evidence_origin: Literal["reused_wave1", "new_search", "none"] = "none"
+
+
+class CrossCheckItemDraft(BaseModel):
+    """One support judgment in the batched cross-check call."""
+
+    claim_id: str
+    support: Literal["yes", "no", "conflict"]
+    reason: str = Field(min_length=1)
+
+
+class CrossCheckDraft(BaseModel):
+    """Raw batched entailment result before Python maps the labels."""
+
+    items: list[CrossCheckItemDraft] = Field(default_factory=list)
+
+
+class CrossCheckReport(BaseModel):
+    """One verdict per Analyst claim after search/fetch plus one LLM batch."""
+
+    verdicts: list[CrossCheckVerdict] = Field(default_factory=list)
+
+
+class AuditItemDraft(BaseModel):
+    """One (claim, cited source) judgment from the batched Auditor call."""
+
+    claim_id: str
+    source_id: str
+    support: Literal["support", "silent", "conflict"]
+    reason: str = Field(min_length=1)
+
+
+class AuditDraft(BaseModel):
+    """Raw batched entailment result before Python rolls up claim verdicts."""
+
+    items: list[AuditItemDraft] = Field(default_factory=list)
+
+
+class AuditSourceNote(BaseModel):
+    """What one independently refetched citation said about one claim."""
+
+    claim_id: str
+    source_id: str
+    url: str
+    support: Literal["support", "silent", "conflict"]
+    reason: str
+    passage_ids: list[str] = Field(default_factory=list)
+    available: bool = True
+
+
+class ClaimAudit(BaseModel):
+    """Final Auditor label for one Analyst claim."""
+
+    claim_id: str
+    verdict: Literal["SUPPORTED", "UNSUPPORTED", "CONTRADICTED", "UNCITED"]
+    reason: str
+    source_notes: list[AuditSourceNote] = Field(default_factory=list)
+
+
+class AuditReport(BaseModel):
+    """One verdict per Analyst claim after independent refetch and judgment."""
+
+    verdicts: list[ClaimAudit] = Field(default_factory=list)
+    urls_refetched: list[str] = Field(default_factory=list)
+    urls_skipped: list[str] = Field(default_factory=list)
+
+
+class AnswerLine(BaseModel):
+    """One verified claim the user is allowed to see."""
+
+    field: str
+    text: str
+    claim_id: str
+    urls: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+
+
+class MissingLine(BaseModel):
+    """A required field or rank slot with no verified claim."""
+
+    field: str
+    reason: str
+
+
+class DisputedLine(BaseModel):
+    """A claim the Auditor or cross-check marked as conflicting."""
+
+    field: str
+    claim_id: str
+    reason: str
+    urls: list[str] = Field(default_factory=list)
+
+
+class FinalAnswer(BaseModel):
+    """Deterministic user-facing answer. No extra model call."""
+
+    complete: bool
+    accepted: list[AnswerLine] = Field(default_factory=list)
+    missing: list[MissingLine] = Field(default_factory=list)
+    disputed: list[DisputedLine] = Field(default_factory=list)
+
+
+class MemoryFact(BaseModel):
+    """One accepted fact scoped to an entity. Never a whole previous answer."""
+
+    entity: str
+    field: str
+    text: str
+    quote: str = ""
+    urls: list[str] = Field(default_factory=list)
+    period: str | None = None
+    as_of_date: str
+    corroboration: Literal["corroborated", "single_source", "multi_source"] = (
+        "single_source"
+    )
+
+
+class MemoryReject(BaseModel):
+    """A disputed or rejected sentence the next planner must not reuse as fact."""
+
+    entity: str
+    field: str
+    text: str
+    status: Literal["rejected", "disputed"]
+    reason: str
+    urls: list[str] = Field(default_factory=list)
+    as_of_date: str
+
+
+class MemorySnapshot(BaseModel):
+    """On-disk entity memory. Rebuilt per eval; not an answer cache."""
+
+    facts: list[MemoryFact] = Field(default_factory=list)
+    rejects: list[MemoryReject] = Field(default_factory=list)
+
+
+class MemoryRecall(BaseModel):
+    """Prompt lines for the planner. Facts and warnings stay separate."""
+
+    known_facts: list[str] = Field(default_factory=list)
+    disputed_notes: list[str] = Field(default_factory=list)
+    rejected_notes: list[str] = Field(default_factory=list)

@@ -10,7 +10,7 @@ from src.models import (
     SearchHit,
     SearchResponse,
 )
-from src.collect_evidence import collect_evidence, merge_search_hits
+from src.collect_evidence import collect_evidence, collect_wave2, merge_search_hits
 from src.tools.fetch import ParallelFetcher
 from src.tools.retrieve import PassageRetriever
 from src.trace import JsonlTracer
@@ -132,3 +132,58 @@ def test_first_wave_fetches_five_pages_and_keeps_the_rest(tmp_path: Path) -> Non
     assert len(packet.unused_urls) == 2
     assert packet.retrieval.passages_selected >= 1
     assert "Ajoy Chawla" in packet.retrieval.passages[0].text
+
+
+def test_wave2_fetches_leftover_urls_without_searching(tmp_path: Path) -> None:
+    settings = valid_settings()
+    tracer = JsonlTracer(tmp_path / "wave2.jsonl", reset=True)
+    query = "Titan Company Managing Director 2026"
+    plan = ResearchPlan(
+        specified=titan_specified(),
+        queries=[
+            PlannedQuery(
+                query=query,
+                targets=["full name"],
+                reason="Find the current MD.",
+            )
+        ],
+    )
+    urls = [f"https://example.com/page-{index}" for index in range(7)]
+    searcher = ScriptedSearch(
+        {query: [hit(url, query, f"Page {url}") for url in urls]}
+    )
+    fetched_urls: list[str] = []
+
+    def http_get(url: str, **_: object):
+        fetched_urls.append(url)
+        return html_response(
+            url,
+            "C.K. Venkataraman retired as Managing Director of Titan Company.",
+        )
+
+    fetcher = ParallelFetcher(settings, tracer, http_get=http_get)
+    first = collect_evidence(
+        plan,
+        settings,
+        tracer,
+        searcher=searcher,  # type: ignore[arg-type]
+        fetcher=fetcher,
+        retriever=PassageRetriever(settings, tracer),
+    )
+    assert first.pages_used == 5
+    leftovers = list(first.unused_urls)
+    assert leftovers == urls[5:]
+
+    second = collect_wave2(
+        first,
+        settings,
+        tracer,
+        ["predecessor's name"],
+        fetcher=fetcher,
+        retriever=PassageRetriever(settings, tracer),
+    )
+    assert searcher.queries == [query]
+    assert second.pages_used == 7
+    assert leftovers[0] in fetched_urls
+    assert second.unused_urls == []
+    assert any("Venkataraman" in item.text for item in second.retrieval.passages)

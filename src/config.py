@@ -46,8 +46,14 @@ class Settings(BaseModel):
     max_planner_queries: int = 4
     max_analyst_notes: int = 3
     max_analyst_note_chars: int = 220
+    max_memory_prompt_items: int = 8
     # Frozen so "last two years" means the same thing in every Q1-Q8 run.
     as_of_date: date = DEFAULT_AS_OF_DATE
+
+    @property
+    def memory_path(self) -> Path:
+        """JSON entity store. Gitignored so eval runs start clean if needed."""
+        return self.root / "data" / "memory.json"
 
     @property
     def evidence_token_budget(self) -> int:

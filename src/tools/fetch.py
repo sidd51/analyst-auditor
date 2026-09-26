@@ -31,15 +31,35 @@ LOGIN_WALL_DOMAINS = (
     "tiktok.com",
     "threads.net",
 )
+JUNK_DOMAINS = (
+    "leadiq.com",
+    "zoominfo.com",
+    "rocketreach.co",
+    "crunchbase.com",
+)
+JUNK_PATH_MARKERS = ("/error-page", "/paywall")
+
+
+def _host_matches(host: str, domains: tuple[str, ...]) -> bool:
+    hostname = host.lower().strip().rstrip(".")
+    return any(
+        hostname == domain or hostname.endswith("." + domain)
+        for domain in domains
+    )
 
 
 def is_login_wall(host: str) -> bool:
     """Skip social/login pages so they do not consume the fetch wave."""
-    hostname = host.lower().strip().rstrip(".")
-    return any(
-        hostname == domain or hostname.endswith("." + domain)
-        for domain in LOGIN_WALL_DOMAINS
-    )
+    return _host_matches(host, LOGIN_WALL_DOMAINS)
+
+
+def is_junk_url(url: str) -> bool:
+    """Skip contact-DB walls and error/paywall paths before they use a slot."""
+    parsed = urlsplit(url)
+    if _host_matches(parsed.netloc, JUNK_DOMAINS):
+        return True
+    path = parsed.path.lower()
+    return any(marker in path for marker in JUNK_PATH_MARKERS)
 
 
 class ParallelFetcher:
@@ -114,6 +134,9 @@ class ParallelFetcher:
                 continue
             if is_login_wall(parsed.netloc):
                 self._trace_skip(clean_url, "known login wall")
+                continue
+            if is_junk_url(clean_url):
+                self._trace_skip(clean_url, "junk or error page")
                 continue
 
             key = _url_key(clean_url)

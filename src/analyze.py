@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 
-from src.collect_evidence import collect_evidence
+from src.audit import audit_claims
+from src.collect_evidence import collect_evidence, collect_wave2
 from src.config import Settings, load_settings
+from src.cross_check import cross_check_claims
+from src.gate import close_answer, render_answer
 from src.llm import OpenRouterLLM, StructuredResult
+from src.memory import EntityMemory
 from src.models import (
     AnalystClaim,
     AnalystDraft,
     AnalystResult,
     DraftClaim,
+    DraftUnanswered,
     EvidencePacket,
+    SpecifiedQuestion,
     UnansweredField,
 )
 from src.plan_research import plan_research
+from src.quotes import quote_appears
 from src.specify import specify_question
 from src.trace import JsonlTracer
 
@@ -39,29 +45,6 @@ Rules:
 - Write at most three short notes. Notes may mention plans. Notes are not claims.
 - Do not decide whether the answer is complete.
 """
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().casefold()
-
-
-def _letters(text: str) -> str:
-    """Drop punctuation so 'C.K.' and 'CK' compare as the same name."""
-    return re.sub(r"[^a-z0-9\s]", "", _normalize(text))
-
-
-def quote_appears(quote: str, passage_text: str, title: str = "") -> bool:
-    """The quote must appear in the passage body or its page title.
-
-    Titles are part of the fetched page. The Titan predecessor miss happened
-    because the model copied the headline, which used CK instead of C.K.
-    """
-    haystack = f"{title}\n{passage_text}"
-    needle = _normalize(quote)
-    if needle and needle in _normalize(haystack):
-        return True
-    loose_needle = _letters(quote)
-    return bool(loose_needle) and loose_needle in _letters(haystack)
 
 
 def finalize_analyst(
@@ -185,10 +168,75 @@ def _coverage_records(
     return records
 
 
+def missing_required_fields(
+    result: AnalystResult,
+    specified: SpecifiedQuestion,
+) -> list[str]:
+    """Required spec fields that still have no quoted claim."""
+    covered = {claim.field.casefold() for claim in result.claims}
+    return [
+        field
+        for field in specified.specification.required_fields
+        if field.casefold() not in covered
+    ]
+
+
+def should_fetch_wave2(
+    packet: EvidencePacket,
+    result: AnalystResult,
+    settings: Settings,
+) -> bool:
+    """One extra wave only when a required field is open and leftovers remain."""
+    if not packet.unused_urls or packet.next_wave_size <= 0:
+        return False
+    return bool(missing_required_fields(result, packet.plan.specified))
+
+
+def merge_analyst_results(
+    first: AnalystResult,
+    second: AnalystResult,
+    packet: EvidencePacket,
+    settings: Settings | None = None,
+) -> AnalystResult:
+    """Keep wave-1 claims and append new quoted facts with fresh IDs."""
+    claims = list(first.claims)
+    seen = {claim.text.casefold() for claim in claims}
+    for claim in second.claims:
+        if claim.text.casefold() in seen:
+            continue
+        seen.add(claim.text.casefold())
+        claims.append(
+            claim.model_copy(update={"claim_id": f"C{len(claims) + 1:02d}"})
+        )
+    unanswered = _coverage_records(
+        packet,
+        claims,
+        AnalystDraft(
+            unanswered=[
+                DraftUnanswered(field=item.field, reason=item.reason)
+                for item in (*first.unanswered, *second.unanswered)
+            ]
+        ),
+    )
+    notes = _trim_notes(
+        [*first.notes, *second.notes],
+        limit=settings.max_analyst_notes if settings else 3,
+        max_chars=settings.max_analyst_note_chars if settings else 220,
+    )
+    return AnalystResult(
+        claims=claims,
+        unanswered=unanswered,
+        notes=notes,
+        dropped_drafts=first.dropped_drafts + second.dropped_drafts,
+    )
+
+
 def analyze_evidence(
     packet: EvidencePacket,
     settings: Settings,
     llm: OpenRouterLLM,
+    *,
+    focus_fields: list[str] | None = None,
 ) -> StructuredResult[AnalystResult]:
     """Ask the model for drafts, then keep only fail-closed supported claims."""
     specified = packet.plan.specified
@@ -200,12 +248,20 @@ def analyze_evidence(
         )
         or ["No passages were selected."]
     )
+    required = ", ".join(focus_fields or spec.required_fields)
+    focus_line = ""
+    if focus_fields:
+        focus_line = (
+            f"Focus only on these still-missing fields: {required}\n"
+            "Do not repeat facts already found for other fields.\n"
+        )
     user_prompt = (
         f"Question:\n{specified.question}\n\n"
         f"As-of date: {specified.as_of_date}\n"
         f"Resolved time period: {specified.resolved_time_period or 'not specified'}\n"
         f"Entities: {', '.join(spec.entities)}\n"
-        f"Required fields: {', '.join(spec.required_fields)}\n"
+        f"Required fields: {required}\n"
+        f"{focus_line}"
         f"Geography: {spec.geography or 'not specified'}\n"
         f"Required count: {spec.required_count or 'not specified'}\n"
         f"Ranking: {spec.ranking}\n"
@@ -229,8 +285,8 @@ def analyze_evidence(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Specify, plan, collect wave-1 evidence, then extract claims. "
-            "This makes three paid model calls plus live web requests."
+            "Specify, plan, collect, extract claims, optional wave 2, "
+            "cross-check, then audit. Up to six paid model calls plus live web."
         )
     )
     parser.add_argument("question")
@@ -251,11 +307,83 @@ def main(argv: list[str] | None = None) -> int:
     llm = OpenRouterLLM(settings, tracer)
 
     tracer.event("run_start", step="step4d_analyze", question=args.question)
+    memory = EntityMemory.load(settings)
     try:
         specified = specify_question(args.question, args.note, settings, llm)
-        planned = plan_research(specified.value, settings, llm)
+        recalled = memory.recall(
+            specified.value,
+            limit=settings.max_memory_prompt_items,
+        )
+        planned = plan_research(
+            specified.value,
+            settings,
+            llm,
+            known_facts=recalled.known_facts,
+            disputed_notes=recalled.disputed_notes,
+            rejected_notes=recalled.rejected_notes,
+        )
         packet = collect_evidence(planned.value, settings, tracer)
         analyzed = analyze_evidence(packet, settings, llm)
+        if should_fetch_wave2(packet, analyzed.value, settings):
+            gaps = missing_required_fields(analyzed.value, specified.value)
+            tracer.event(
+                "wave2_start",
+                fields=gaps,
+                unused_urls=packet.unused_urls,
+                next_wave_size=packet.next_wave_size,
+            )
+            packet = collect_wave2(packet, settings, tracer, gaps)
+            if packet.retrieval.passages:
+                second = analyze_evidence(
+                    packet,
+                    settings,
+                    llm,
+                    focus_fields=gaps,
+                )
+                analyzed = StructuredResult(
+                    value=merge_analyst_results(
+                        analyzed.value,
+                        second.value,
+                        packet,
+                        settings,
+                    ),
+                    cost=analyzed.cost.plus(second.cost),
+                    generation_id=second.generation_id,
+                )
+            tracer.event(
+                "wave2_end",
+                pages_used=packet.pages_used,
+                claims=len(analyzed.value.claims),
+                unanswered=[item.field for item in analyzed.value.unanswered],
+            )
+        checked = cross_check_claims(
+            analyzed.value.claims,
+            specified.value,
+            settings,
+            tracer,
+            llm=llm,
+            known_pages=packet.fetched.pages,
+        )
+        audited = audit_claims(
+            analyzed.value.claims,
+            specified.value,
+            settings,
+            tracer,
+            llm=llm,
+        )
+        final = close_answer(
+            specified.value,
+            analyzed.value,
+            audited.value,
+            checked.value,
+        )
+        memory.update_from_run(
+            specified.value,
+            analyzed.value,
+            final,
+            checked.value,
+        )
+        memory.save()
     except Exception as exc:
         tracer.event("run_end", ok=False)
         print(f"FAIL: {type(exc).__name__}: {exc}")
@@ -264,15 +392,30 @@ def main(argv: list[str] | None = None) -> int:
 
     result = analyzed.value
     tracer.event("analyst_result", **result.model_dump())
+    tracer.event("final_answer", **final.model_dump())
+    tracer.event(
+        "memory_write",
+        path=str(memory.path),
+        facts=len(memory.snapshot.facts),
+        rejects=len(memory.snapshot.rejects),
+        recalled_facts=recalled.known_facts,
+    )
     tracer.event(
         "run_end",
         ok=True,
+        complete=final.complete,
         specify_cost=specified.cost.as_dict(),
         plan_cost=planned.cost.as_dict(),
         analyze_cost=analyzed.cost.as_dict(),
+        cross_check_cost=checked.cost.as_dict(),
+        audit_cost=audited.cost.as_dict(),
     )
 
-    print(f"Pages used: {packet.pages_used} | Next wave: {packet.next_wave_size}")
+    print(
+        f"Pages used: {packet.pages_used} | "
+        f"Unused leftovers: {len(packet.unused_urls)} | "
+        f"Next wave: {packet.next_wave_size}"
+    )
     print(f"Supported claims: {len(result.claims)}")
     for claim in result.claims:
         print(f"- {claim.claim_id} [{claim.field}] {claim.text}")
@@ -287,16 +430,35 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {note}")
     if result.dropped_drafts:
         print(f"Dropped unsupported drafts: {result.dropped_drafts}")
+    print("Cross-check:")
+    for verdict in checked.value.verdicts:
+        extra = f" → {verdict.independent_url}" if verdict.independent_url else ""
+        print(f"- {verdict.claim_id} {verdict.status}{extra}")
+        print(f"  {verdict.reason}")
+    print("Auditor:")
+    for verdict in audited.value.verdicts:
+        print(f"- {verdict.claim_id} {verdict.verdict}")
+        print(f"  {verdict.reason}")
+        for note in verdict.source_notes:
+            print(f"  {note.source_id} {note.support}: {note.reason}")
+    print()
+    print(render_answer(final))
+    print(
+        f"Memory: {len(memory.snapshot.facts)} fact(s), "
+        f"{len(memory.snapshot.rejects)} note(s) → {memory.path}"
+    )
     print(
         "Tokens: "
         f"specify {specified.cost.total_tokens} | "
         f"plan {planned.cost.total_tokens} | "
-        f"analyze {analyzed.cost.total_tokens}"
+        f"analyze {analyzed.cost.total_tokens} | "
+        f"cross-check {checked.cost.total_tokens} | "
+        f"audit {audited.cost.total_tokens}"
     )
     print(
         "Estimated LLM cost: "
-        f"${specified.cost.cost_usd + planned.cost.cost_usd + analyzed.cost.cost_usd:.8f} / "
-        f"₹{specified.cost.cost_inr + planned.cost.cost_inr + analyzed.cost.cost_inr:.6f}"
+        f"${specified.cost.cost_usd + planned.cost.cost_usd + analyzed.cost.cost_usd + checked.cost.cost_usd + audited.cost.cost_usd:.8f} / "
+        f"₹{specified.cost.cost_inr + planned.cost.cost_inr + analyzed.cost.cost_inr + checked.cost.cost_inr + audited.cost.cost_inr:.6f}"
     )
     print(f"Trace: {trace_path}")
     return 0

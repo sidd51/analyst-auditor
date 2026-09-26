@@ -85,6 +85,26 @@ def test_beautifulsoup_is_used_when_trafilatura_returns_nothing(
     assert result.pages[0].text == "Fallback text"
 
 
+def test_junk_hosts_and_error_paths_are_skipped(tmp_path: Path) -> None:
+    fetched: list[str] = []
+
+    def fake_get(url: str, **_: Any) -> httpx.Response:
+        fetched.append(url)
+        return response(url, f"<article>Readable {url}</article>")
+
+    fetcher = ParallelFetcher(settings(), tracer(tmp_path), http_get=fake_get)
+    result = fetcher.fetch_many(
+        [
+            "https://leadiq.com/c/titan-company-limited/abc",
+            "https://example.com/ok",
+        ],
+        page_limit=1,
+    )
+
+    assert fetched == ["https://example.com/ok"]
+    assert result.pages[0].url == "https://example.com/ok"
+
+
 def test_social_login_walls_are_skipped_and_do_not_use_the_page_budget(
     tmp_path: Path,
 ) -> None:

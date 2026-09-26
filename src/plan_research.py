@@ -7,6 +7,7 @@ import sys
 
 from src.config import Settings, load_settings
 from src.llm import OpenRouterLLM, StructuredResult
+from src.memory import EntityMemory
 from src.models import PlannerOutput, ResearchPlan, SpecifiedQuestion
 from src.period import split_entities
 from src.specify import specify_question
@@ -26,6 +27,9 @@ Rules:
 - Do not answer the question.
 - Do not decide how many pages to fetch.
 - If known facts are listed, do not search for those facts again.
+- If a field is listed as disputed, do not treat either value as known.
+  Search again for that field.
+- Do not reuse rejected sentences as answers.
 - Do not invent company, person, or product names.
 - If the spec only has category entities, write discovery queries using that
   category. Name a specific company only if it already appears in the spec
@@ -39,6 +43,8 @@ def finalize_plan(
     settings: Settings,
     *,
     known_facts: list[str] | None = None,
+    disputed_notes: list[str] | None = None,
+    rejected_notes: list[str] | None = None,
 ) -> ResearchPlan:
     """Deduplicate queries and keep only the first `max_planner_queries`."""
     seen: set[str] = set()
@@ -59,6 +65,8 @@ def finalize_plan(
         specified=specified,
         queries=kept[:limit],
         known_facts=list(known_facts or []),
+        disputed_notes=list(disputed_notes or []),
+        rejected_notes=list(rejected_notes or []),
         truncated=len(kept) > limit,
     )
 
@@ -69,9 +77,13 @@ def plan_research(
     llm: OpenRouterLLM,
     *,
     known_facts: list[str] | None = None,
+    disputed_notes: list[str] | None = None,
+    rejected_notes: list[str] | None = None,
 ) -> StructuredResult[ResearchPlan]:
     """Ask the model for queries, then cap and clean the list in Python."""
     facts = [fact.strip() for fact in (known_facts or []) if fact.strip()]
+    disputed = [note.strip() for note in (disputed_notes or []) if note.strip()]
+    rejected = [note.strip() for note in (rejected_notes or []) if note.strip()]
     spec = specified.specification
     named, categories = split_entities(spec.entities)
     user_prompt = (
@@ -96,6 +108,10 @@ def plan_research(
         f"Not-found rule: {spec.not_found_rule}\n"
         f"Known facts (do not research these): "
         f"{'; '.join(facts) or 'none yet'}\n"
+        f"Disputed fields (do not treat as known; search again): "
+        f"{'; '.join(disputed) or 'none yet'}\n"
+        f"Rejected claims (do not reuse these sentences): "
+        f"{'; '.join(rejected) or 'none yet'}\n"
     )
 
     drafted = llm.complete_structured(
@@ -109,6 +125,8 @@ def plan_research(
         drafted.value,
         settings,
         known_facts=facts,
+        disputed_notes=disputed,
+        rejected_notes=rejected,
     )
     return StructuredResult(
         value=plan,
@@ -144,7 +162,18 @@ def main(argv: list[str] | None = None) -> int:
     tracer.event("run_start", step="step4b_plan", question=args.question)
     try:
         specified = specify_question(args.question, args.note, settings, llm)
-        planned = plan_research(specified.value, settings, llm)
+        recalled = EntityMemory.load(settings).recall(
+            specified.value,
+            limit=settings.max_memory_prompt_items,
+        )
+        planned = plan_research(
+            specified.value,
+            settings,
+            llm,
+            known_facts=recalled.known_facts,
+            disputed_notes=recalled.disputed_notes,
+            rejected_notes=recalled.rejected_notes,
+        )
     except Exception as exc:
         tracer.event("run_end", ok=False)
         print(f"FAIL: {type(exc).__name__}: {exc}")
