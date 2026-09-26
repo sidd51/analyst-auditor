@@ -19,12 +19,27 @@ from src.models import FetchedPage, FetchResponse
 from src.trace import JsonlTracer
 
 USER_AGENT = "analyst-auditor/1.0 (research take-home)"
-KNOWN_LOGIN_WALLS = {
+# Registrable domains only. Subdomains such as m.facebook.com also match.
+LOGIN_WALL_DOMAINS = (
+    "facebook.com",
     "instagram.com",
     "linkedin.com",
-    "www.instagram.com",
-    "www.linkedin.com",
-}
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "threads.net",
+)
+
+
+def is_login_wall(host: str) -> bool:
+    """Skip social/login pages so they do not consume the fetch wave."""
+    hostname = host.lower().strip().rstrip(".")
+    return any(
+        hostname == domain or hostname.endswith("." + domain)
+        for domain in LOGIN_WALL_DOMAINS
+    )
 
 
 class ParallelFetcher:
@@ -97,7 +112,7 @@ class ParallelFetcher:
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 self._trace_skip(clean_url, "invalid URL")
                 continue
-            if parsed.netloc.lower() in KNOWN_LOGIN_WALLS:
+            if is_login_wall(parsed.netloc):
                 self._trace_skip(clean_url, "known login wall")
                 continue
 

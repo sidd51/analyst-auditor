@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
+
+from src.period import DEFAULT_AS_OF_DATE, parse_as_of_date
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,6 +43,11 @@ class Settings(BaseModel):
     initial_page_budget: int = 5
     page_wave_size: int = 4
     absolute_page_ceiling: int = 15
+    max_planner_queries: int = 4
+    max_analyst_notes: int = 3
+    max_analyst_note_chars: int = 220
+    # Frozen so "last two years" means the same thing in every Q1-Q8 run.
+    as_of_date: date = DEFAULT_AS_OF_DATE
 
     @property
     def evidence_token_budget(self) -> int:
@@ -93,6 +101,7 @@ def load_settings(*, require_tavily: bool = False) -> Settings:
             max_model_output_tokens=int(
                 os.getenv("MAX_MODEL_OUTPUT_TOKENS") or "2000"
             ),
+            as_of_date=parse_as_of_date(os.getenv("AS_OF_DATE")),
         )
     except (ValueError, ValidationError) as exc:
         raise RuntimeError(f"Invalid environment configuration: {exc}") from exc

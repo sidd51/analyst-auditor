@@ -69,7 +69,8 @@ python -m src.tools.fetch \
 The fetcher:
 
 - deduplicates URLs and enforces the page budget;
-- skips known Instagram/LinkedIn login walls;
+- skips known login walls (Facebook, Instagram, LinkedIn, X/Twitter,
+  YouTube, TikTok, Threads);
 - fetches selected pages with `ThreadPoolExecutor`;
 - uses Trafilatura for HTML and BeautifulSoup as fallback;
 - uses `pypdf` for PDF text with page labels;
@@ -103,7 +104,9 @@ python -m src.specify \
 ```
 
 The model extracts entities, required fields, dates, geography, ranking, and
-not-found rules. Python then attaches the same page policy to every question:
+not-found rules. Python attaches an as-of date (`2026-09-26` by default),
+resolves phrases such as "last two years" into an explicit range, and applies
+the same page policy to every question:
 
 - first wave: 5 pages
 - later waves: 4 more pages only if required fields are still missing
@@ -111,6 +114,56 @@ not-found rules. Python then attaches the same page policy to every question:
 
 Question type does not change the first-wave budget. The command writes the
 spec, policy, tokens, and cost to `logs/step4-specify.jsonl`.
+
+## Step 4B — research planner
+
+This command makes two small paid OpenRouter calls (specify, then plan):
+
+```bash
+python -m src.plan_research \
+  "Who is Titan Company's Managing Director in 2026?" \
+  --note "Give the full name and effective appointment date."
+```
+
+The planner returns 2–4 focused queries, each tagged to a required field.
+It must use the resolved date range and must not invent company names when
+the spec only has a category such as "Indian jewellery retailers". Python
+deduplicates queries and keeps at most four. Memory is empty in this step,
+so the prompt says there are no known facts yet. No search or fetch happens
+here. The plan is written to `logs/step4-plan.jsonl`.
+
+## Step 4C — first-wave evidence
+
+This command makes two paid OpenRouter calls, then live search and fetch:
+
+```bash
+python -m src.collect_evidence \
+  "Who is Titan Company's Managing Director in 2026?" \
+  --note "Give the full name and effective appointment date."
+```
+
+It searches each planned query sequentially, deduplicates URLs, fetches the
+first 5 pages in parallel, and retrieves relevant passages. Extra URLs stay
+in `unused_urls` for a later wave. No extra LLM call happens after planning.
+The run is written to `logs/step4-collect.jsonl`.
+
+## Step 4D — Analyst claims
+
+This command makes three paid OpenRouter calls, then live search and fetch:
+
+```bash
+python -m src.analyze \
+  "Who is Titan Company's Managing Director in 2026?" \
+  --note "Give the full name and effective appointment date."
+```
+
+The Analyst may emit a claim only when a selected passage contains an exact
+quote of an actual fact in the resolved period. A single in-window
+opened/added number is still a claim even if a ranking cannot be finished.
+Plans and guesses are not claims. Missing required fields and missing rank
+slots are listed as `unanswered`. Python drops any draft whose quote is not
+in the cited passage and keeps at most three short notes. Completeness is
+not decided here. The run is written to `logs/step4-analyze.jsonl`.
 
 ## What stays out of this setup
 

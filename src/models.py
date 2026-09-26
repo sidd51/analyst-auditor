@@ -178,3 +178,116 @@ class SpecifiedQuestion(BaseModel):
     notes: list[str] = Field(default_factory=list)
     specification: QuestionSpecification
     page_policy: PagePolicy
+    as_of_date: str
+    resolved_time_period: str | None = None
+
+
+class PlannedQuery(BaseModel):
+    """One search query aimed at one or more required fields."""
+
+    query: str = Field(min_length=1, description="The exact web search string.")
+    targets: list[str] = Field(
+        min_length=1,
+        description="Required fields this query is trying to cover.",
+    )
+    reason: str = Field(
+        min_length=1,
+        description="Why this query is needed, in one short sentence.",
+    )
+
+
+class PlannerOutput(BaseModel):
+    """Raw planner response before Python applies the query cap."""
+
+    queries: list[PlannedQuery] = Field(min_length=1)
+
+
+class ResearchPlan(BaseModel):
+    """Bounded search plan that later steps will execute sequentially."""
+
+    specified: SpecifiedQuestion
+    queries: list[PlannedQuery]
+    known_facts: list[str] = Field(default_factory=list)
+    truncated: bool = False
+
+
+class CandidateUrl(BaseModel):
+    """One unique URL discovered by one or more planned searches."""
+
+    url: str
+    title: str = ""
+    snippet: str = ""
+    discovered_by: list[str] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+
+
+class EvidencePacket(BaseModel):
+    """First-wave evidence ready for a later Analyst call."""
+
+    plan: ResearchPlan
+    searches: list[SearchResponse] = Field(default_factory=list)
+    candidates: list[CandidateUrl] = Field(default_factory=list)
+    fetched: FetchResponse
+    retrieval: RetrievalResponse
+    pages_used: int
+    next_wave_size: int
+    unused_urls: list[str] = Field(default_factory=list)
+
+
+class DraftClaim(BaseModel):
+    """Model draft of one fact. Python keeps it only if the quote checks out."""
+
+    field: str = Field(min_length=1, description="Required field this fact fills.")
+    text: str = Field(min_length=1, description="One atomic factual statement.")
+    quote: str = Field(min_length=1, description="Exact words copied from a passage.")
+    passage_ids: list[str] = Field(min_length=1)
+    period: str | None = Field(
+        default=None,
+        description="Date or window stated in the passage, if any.",
+    )
+
+
+class DraftUnanswered(BaseModel):
+    """A required field or rank slot that the passages do not support."""
+
+    field: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class AnalystDraft(BaseModel):
+    """Raw Analyst output before Python drops unsupported drafts."""
+
+    claims: list[DraftClaim] = Field(default_factory=list)
+    unanswered: list[DraftUnanswered] = Field(default_factory=list)
+    notes: list[str] = Field(
+        default_factory=list,
+        description="Optional context such as planned expansions. Not facts.",
+    )
+
+
+class AnalystClaim(BaseModel):
+    """A supported fact with a quote that appears in a cited passage."""
+
+    claim_id: str
+    field: str
+    text: str
+    quote: str
+    passage_ids: list[str]
+    urls: list[str]
+    period: str | None = None
+
+
+class UnansweredField(BaseModel):
+    """Coverage record for something the passages could not support."""
+
+    field: str
+    reason: str
+
+
+class AnalystResult(BaseModel):
+    """Supported claims only, plus explicit unanswered fields."""
+
+    claims: list[AnalystClaim] = Field(default_factory=list)
+    unanswered: list[UnansweredField] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    dropped_drafts: int = 0

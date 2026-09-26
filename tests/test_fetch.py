@@ -85,6 +85,36 @@ def test_beautifulsoup_is_used_when_trafilatura_returns_nothing(
     assert result.pages[0].text == "Fallback text"
 
 
+def test_social_login_walls_are_skipped_and_do_not_use_the_page_budget(
+    tmp_path: Path,
+) -> None:
+    fetched: list[str] = []
+
+    def fake_get(url: str, **_: Any) -> httpx.Response:
+        fetched.append(url)
+        return response(url, f"<article>Readable {url}</article>")
+
+    fetcher = ParallelFetcher(settings(), tracer(tmp_path), http_get=fake_get)
+    result = fetcher.fetch_many(
+        [
+            "https://www.facebook.com/RelianceJewels/posts/123",
+            "https://m.facebook.com/story.php?id=1",
+            "https://x.com/someone/status/1",
+            "https://www.youtube.com/watch?v=abc",
+            "https://example.com/usable-one",
+            "https://example.com/usable-two",
+        ],
+        page_limit=2,
+    )
+
+    assert fetched == [
+        "https://example.com/usable-one",
+        "https://example.com/usable-two",
+    ]
+    assert [page.url for page in result.pages] == fetched
+    assert result.selected_count == 2
+
+
 def test_page_budget_and_input_order_are_enforced(tmp_path: Path) -> None:
     urls = [f"https://example.com/{number}" for number in range(4)]
     fetcher = ParallelFetcher(

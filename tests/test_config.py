@@ -26,6 +26,8 @@ def test_page_budget_uses_waves_not_question_complexity() -> None:
     assert settings.initial_page_budget == 5
     assert settings.page_wave_size == 4
     assert settings.absolute_page_ceiling == 15
+    assert settings.max_planner_queries == 4
+    assert settings.as_of_date.isoformat() == "2026-09-26"
 
 
 def test_empty_openrouter_key_is_rejected() -> None:

@@ -9,6 +9,7 @@ from src.config import Settings, load_settings
 from src.llm import OpenRouterLLM, StructuredResult
 from src.models import QuestionSpecification, SpecifiedQuestion
 from src.page_budget import page_policy_from_settings
+from src.period import resolve_time_period
 from src.trace import JsonlTracer
 
 # Keep this prompt about *what the question asks*, not how to research it.
@@ -21,6 +22,8 @@ Rules:
 - List every required answer field as a short label a later checker can use.
 - Capture time period, geography, requested count, ranking, comparison, and
   exhaustive-list wording when they are present.
+- Interpret relative periods such as "last two years" against the as-of date
+  supplied in the user message. Do not invent a different today.
 - If a detail is not in the question or notes, leave it null or false.
 - Write a not_found_rule that says when a field must be reported missing.
 - Do not invent extra research tasks.
@@ -40,7 +43,11 @@ def specify_question(
     if not cleaned_question:
         raise ValueError("question must not be empty")
 
-    user_prompt = f"Question:\n{cleaned_question}"
+    as_of = settings.as_of_date.isoformat()
+    user_prompt = (
+        f"As-of date (supplied by Python): {as_of}\n\n"
+        f"Question:\n{cleaned_question}"
+    )
     if cleaned_notes:
         user_prompt += "\n\nNotes:\n" + "\n".join(
             f"- {note}" for note in cleaned_notes
@@ -58,6 +65,11 @@ def specify_question(
         specification=extracted.value,
         # Always overwrite: even a ranking question starts with 5 pages.
         page_policy=page_policy_from_settings(settings),
+        as_of_date=as_of,
+        resolved_time_period=resolve_time_period(
+            extracted.value.time_period,
+            settings.as_of_date,
+        ),
     )
     return StructuredResult(
         value=specified,
@@ -101,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         "specified_question",
         specification=specified.specification.model_dump(),
         page_policy=specified.page_policy.model_dump(),
+        as_of_date=specified.as_of_date,
+        resolved_time_period=specified.resolved_time_period,
     )
     tracer.event("run_end", ok=True, total_cost=result.cost.as_dict())
 
@@ -110,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         f"start {specified.page_policy.initial_pages}, "
         f"then +{specified.page_policy.wave_size} if fields are missing, "
         f"ceiling {specified.page_policy.page_ceiling}"
+    )
+    print(
+        f"As-of date: {specified.as_of_date} | "
+        f"Resolved period: {specified.resolved_time_period or 'none'}"
     )
     print(
         "Tokens: "
