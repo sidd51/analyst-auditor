@@ -14,11 +14,13 @@ class FakeLLM:
     def __init__(self, specification: QuestionSpecification) -> None:
         self.specification = specification
         self.user_prompt = ""
+        self.system_prompt = ""
         self.calls = 0
 
     def complete_structured(self, **kwargs: object) -> StructuredResult:
         self.calls += 1
         self.user_prompt = str(kwargs.get("user_prompt") or "")
+        self.system_prompt = str(kwargs.get("system_prompt") or "")
         return StructuredResult(
             value=self.specification,
             cost=CostRecord(
@@ -72,6 +74,8 @@ def test_python_attaches_the_same_wave_policy_to_a_ranking_question() -> None:
     assert result.value.as_of_date == "2026-09-26"
     assert result.value.resolved_time_period == "2024-09-26 to 2026-09-26"
     assert "As-of date (supplied by Python): 2026-09-26" in llm.user_prompt
+    assert "chosen_figure_count" in llm.system_prompt
+    assert "brand token" in llm.system_prompt
 
 
 def test_next_fetch_wave_starts_at_five_then_adds_four_until_the_ceiling() -> None:

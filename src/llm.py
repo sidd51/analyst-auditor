@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -37,16 +39,20 @@ class OpenRouterLLM:
         # We use LangChain's mature OpenAI-compatible adapter with OpenRouter's
         # documented base URL. The beta ChatOpenRouter transport repeatedly
         # timed out in testing while the same direct request took 1.43 seconds.
-        self.model = ChatOpenAI(
-            model=settings.openrouter_model,
-            api_key=settings.openrouter_api_key,
+        self._max_output_tokens = settings.max_model_output_tokens
+        self.model = self._make_model()
+
+    def _make_model(self) -> ChatOpenAI:
+        return ChatOpenAI(
+            model=self.settings.openrouter_model,
+            api_key=self.settings.openrouter_api_key,
             base_url="https://openrouter.ai/api/v1",
             default_headers={
                 "HTTP-Referer": "https://github.com/sidd51/analyst-auditor",
                 "X-Title": "Analyst-Auditor",
             },
             temperature=0,
-            max_tokens=settings.max_model_output_tokens,
+            max_tokens=self._max_output_tokens,
             max_retries=0,
             timeout=45,
         )
@@ -69,21 +75,9 @@ class OpenRouterLLM:
             user_prompt=user_prompt,
         )
 
-        # `include_raw=True` is important: the parsed object is convenient, but
-        # the raw LangChain message contains the token counts needed for costs.
-        structured_model = self.model.with_structured_output(
-            schema,
-            method="json_schema",
-            strict=True,
-            include_raw=True,
-        )
-
         try:
-            response = structured_model.invoke(
-                [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt),
-                ]
+            response = self._invoke_structured(
+                schema, system_prompt, user_prompt
             )
         except Exception as exc:
             self.tracer.event(
@@ -130,3 +124,85 @@ class OpenRouterLLM:
             cost=cost,
             generation_id=generation_id,
         )
+
+    def _structured_model(self, schema: type[SchemaT]):
+        # `include_raw=True` is important: the parsed object is convenient, but
+        # the raw LangChain message contains the token counts needed for costs.
+        return self.model.with_structured_output(
+            schema,
+            method="json_schema",
+            strict=True,
+            include_raw=True,
+        )
+
+    def _invoke_structured(
+        self,
+        schema: type[SchemaT],
+        system_prompt: str,
+        user_prompt: str,
+    ):
+        """Wait on in-flight 402s. If the wallet can only reserve fewer
+        output tokens, retry once at that cap. Empty-wallet 402s fail."""
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                return self._structured_model(schema).invoke(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
+            except Exception as exc:
+                last_error = exc
+                wait = in_flight_retry_seconds(exc)
+                affordable = affordable_max_tokens(exc)
+                if wait is not None and attempt < 2:
+                    self.tracer.event(
+                        "llm_retry",
+                        error_type=type(exc).__name__,
+                        wait_seconds=wait,
+                        attempt=attempt + 1,
+                    )
+                    time.sleep(wait)
+                    continue
+                if (
+                    affordable is not None
+                    and affordable < self._max_output_tokens
+                    and attempt < 2
+                ):
+                    self.tracer.event(
+                        "llm_retry",
+                        error_type=type(exc).__name__,
+                        max_tokens=affordable,
+                        attempt=attempt + 1,
+                    )
+                    self._max_output_tokens = affordable
+                    self.model = self._make_model()
+                    continue
+                raise
+        raise last_error or RuntimeError("OpenRouter call failed")
+
+
+def in_flight_retry_seconds(exc: BaseException) -> int | None:
+    """Seconds to wait on an OpenRouter in-flight budget 402, else None."""
+    text = str(exc)
+    if "in_flight_budget" not in text:
+        return None
+    match = re.search(r"Retry-After['\"]?\s*[:=]\s*['\"]?(\d+)", text)
+    if match:
+        return min(max(int(match.group(1)), 5), 180)
+    return 120
+
+
+def affordable_max_tokens(exc: BaseException) -> int | None:
+    """Output-token reservation OpenRouter says the remaining wallet can cover."""
+    text = str(exc)
+    if "can only afford" not in text.casefold():
+        return None
+    match = re.search(r"can only afford (\d+)", text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    affordable = int(match.group(1))
+    if affordable < 400:
+        return None
+    return affordable

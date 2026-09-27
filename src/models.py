@@ -210,6 +210,7 @@ class ResearchPlan(BaseModel):
     known_facts: list[str] = Field(default_factory=list)
     disputed_notes: list[str] = Field(default_factory=list)
     rejected_notes: list[str] = Field(default_factory=list)
+    skipped_queries: list[PlannedQuery] = Field(default_factory=list)
     truncated: bool = False
 
 
@@ -316,6 +317,7 @@ class CrossCheckItemDraft(BaseModel):
     claim_id: str
     support: Literal["yes", "no", "conflict"]
     reason: str = Field(min_length=1)
+    conflict_quote: str = ""
 
 
 class CrossCheckDraft(BaseModel):
@@ -447,5 +449,7 @@ class MemoryRecall(BaseModel):
     """Prompt lines for the planner. Facts and warnings stay separate."""
 
     known_facts: list[str] = Field(default_factory=list)
+    known_fields: list[str] = Field(default_factory=list)
     disputed_notes: list[str] = Field(default_factory=list)
+    disputed_fields: list[str] = Field(default_factory=list)
     rejected_notes: list[str] = Field(default_factory=list)

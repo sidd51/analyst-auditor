@@ -7,8 +7,10 @@ import httpx
 from src.cost import CostRecord
 from src.cross_check import (
     claim_domains,
+    claim_tokens,
     cross_check_claims,
     is_usable_independent_page,
+    page_matches_claim_tokens,
     source_domain,
 )
 from src.llm import StructuredResult
@@ -223,6 +225,7 @@ def test_batched_conflict_maps_to_conflicting(tmp_path: Path) -> None:
                     claim_id="C01",
                     support="conflict",
                     reason="Independent page says 2024 for the same role.",
+                    conflict_quote="Managing Director of Titan Company in 2024",
                 )
             ]
         )
@@ -260,3 +263,95 @@ def test_batched_conflict_maps_to_conflicting(tmp_path: Path) -> None:
     assert result.value.verdicts[0].status == "conflicting"
     assert result.value.verdicts[0].evidence_origin == "new_search"
     assert llm.calls == 1
+    assert "conflict_quote" in llm.system_prompt
+
+
+def test_conflict_without_a_passage_quote_is_single_source(tmp_path: Path) -> None:
+    settings = valid_settings()
+    tracer = JsonlTracer(tmp_path / "x.jsonl", reset=True)
+    llm = FakeLLM(
+        CrossCheckDraft(
+            items=[
+                CrossCheckItemDraft(
+                    claim_id="C01",
+                    support="conflict",
+                    reason="Judge invented a 2024 date.",
+                    conflict_quote="January 1, 2024",
+                )
+            ]
+        )
+    )
+    result = cross_check_claims(
+        [claim(urls=["https://www.marcamoney.com/story"])],
+        titan_specified(),
+        settings,
+        tracer,
+        llm=llm,  # type: ignore[arg-type]
+        searcher=ScriptedSearch(
+            [
+                SearchHit(
+                    title="Story",
+                    url="https://example.com/old",
+                    snippet="",
+                    provider="tavily",
+                    query="q",
+                )
+            ]
+        ),  # type: ignore[arg-type]
+        fetcher=ParallelFetcher(
+            settings,
+            tracer,
+            http_get=lambda url, **_: html(
+                url,
+                (
+                    "Ajoy Chawla became Managing Director of Titan Company "
+                    "in January 2026 after a board meeting in Mumbai. "
+                )
+                * 6,
+            ),
+        ),
+    )
+    assert result.value.verdicts[0].status == "single_source"
+    assert "quoted conflicting span" in result.value.verdicts[0].reason
+
+
+def test_parts_catalog_sharing_only_a_number_is_rejected() -> None:
+    tokens = claim_tokens(
+        [
+            AnalystClaim(
+                claim_id="C01",
+                field="figure_1_count",
+                text="Titan has 472 stores in India under Tanishq.",
+                quote="Titan has 472 stores in India under Tanishq.",
+                passage_ids=["P0001"],
+                urls=["https://timesofindia.indiatimes.com/titan"],
+                period="FY24",
+            )
+        ],
+        "Titan Company",
+    )
+    junk = page(
+        "https://www.alltitanparts.com/titan-472-500-elbow-street",
+        "Titan 472-500 Elbow, Street. Part 472-500. Buy auto parts online.",
+        title="Titan 472-500 Elbow",
+    )
+    assert "472" in tokens.numbers
+    assert page_matches_claim_tokens(junk, tokens) is False
+
+
+def test_cross_check_query_uses_tokens_not_the_full_sentence(tmp_path: Path) -> None:
+    llm = FakeLLM(CrossCheckDraft(items=[]))
+    searcher = ScriptedSearch([])
+    cross_check_claims(
+        [claim(urls=["https://www.marcamoney.com/story"])],
+        titan_specified(),
+        valid_settings(),
+        JsonlTracer(tmp_path / "x.jsonl", reset=True),
+        llm=llm,  # type: ignore[arg-type]
+        searcher=searcher,  # type: ignore[arg-type]
+    )
+    assert searcher.queries
+    query = searcher.queries[0]
+    assert "is MD from" not in query
+    assert "Ajoy" in query
+    assert "2026" in query

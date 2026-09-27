@@ -207,6 +207,8 @@ def test_analyze_prompt_forbids_plans_and_forced_rankings() -> None:
     assert "plans, targets" in llm.system_prompt
     assert "Do not force a top-N ranking" in llm.system_prompt
     assert "single in-window" in llm.system_prompt
+    assert "chosen_figure_count" in llm.system_prompt
+    assert "brand token" in llm.system_prompt
     assert "2024-09-26 to 2026-09-26" in llm.user_prompt
     assert "P0006" in llm.user_prompt
 

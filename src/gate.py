@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlsplit
 
 from src.cross_check import source_domain
@@ -16,6 +17,12 @@ from src.models import (
     SpecifiedQuestion,
     UnansweredField,
 )
+
+CORROBORATION_RANK = {
+    "corroborated": 2,
+    "skipped_multi_source": 1,
+    "single_source": 0,
+}
 
 REJECTED_VERDICTS = {"UNSUPPORTED", "UNCITED"}
 DISPUTED_VERDICTS = {"CONTRADICTED"}
@@ -56,7 +63,7 @@ def close_answer(
             if audit_item
             else "Auditor omitted this claim; fail closed."
         )
-        if claim.claim_id in conflicts:
+        if claim.claim_id in conflicts and verdict != "SUPPORTED":
             disputed.append(
                 DisputedLine(
                     field=claim.field,
@@ -89,9 +96,12 @@ def close_answer(
             )
         )
 
+    accepted, extra_disputed = collapse_duplicate_fields(accepted, cross_check)
+    disputed.extend(extra_disputed)
     covered = {_key(item.field) for item in accepted}
     missing = _missing_fields(specified, analyst.unanswered, covered, rejected_missing)
-    complete = not missing and not disputed and _rank_is_filled(specified, accepted)
+    unresolved = [item for item in disputed if _key(item.field) not in covered]
+    complete = not missing and not unresolved and _rank_is_filled(specified, accepted)
     if not complete and specified.specification.ranking:
         missing = _ensure_rank_missing(specified, accepted, missing)
 
@@ -101,6 +111,65 @@ def close_answer(
         missing=missing,
         disputed=disputed,
     )
+
+
+def collapse_duplicate_fields(
+    accepted: list[AnswerLine],
+    cross_check: CrossCheckReport | None,
+) -> tuple[list[AnswerLine], list[DisputedLine]]:
+    """If two verified claims disagree on one field, keep the better-backed one."""
+    ranks = {
+        item.claim_id: CORROBORATION_RANK.get(item.status, 0)
+        for item in (cross_check.verdicts if cross_check else [])
+    }
+    grouped: dict[str, list[AnswerLine]] = {}
+    order: list[str] = []
+    for line in accepted:
+        key = _key(line.field)
+        if key not in grouped:
+            order.append(key)
+            grouped[key] = []
+        grouped[key].append(line)
+
+    kept: list[AnswerLine] = []
+    disputed: list[DisputedLine] = []
+    for key in order:
+        rows = grouped[key]
+        unique: list[AnswerLine] = []
+        seen_text: set[str] = set()
+        for line in rows:
+            text_key = line.text.casefold()
+            if text_key in seen_text:
+                continue
+            seen_text.add(text_key)
+            unique.append(line)
+        if len(unique) == 1:
+            kept.append(unique[0])
+            continue
+        winner = max(
+            unique,
+            key=lambda item: (
+                ranks.get(item.claim_id, 0),
+                *_source_quality(item),
+                item.claim_id,
+            ),
+        )
+        kept.append(winner)
+        for line in unique:
+            if line.claim_id == winner.claim_id:
+                continue
+            disputed.append(
+                DisputedLine(
+                    field=line.field,
+                    claim_id=line.claim_id,
+                    reason=(
+                        f"Kept {winner.claim_id} for this field "
+                        f"(better independent backing). Other value: {line.text}"
+                    ),
+                    urls=list(line.urls),
+                )
+            )
+    return kept, disputed
 
 
 def render_answer(answer: FinalAnswer) -> str:
@@ -216,6 +285,15 @@ def _unique_labels(urls: list[str]) -> list[str]:
         seen.add(label)
         labels.append(label)
     return labels
+
+
+def _source_quality(line: AnswerLine) -> tuple[int, int]:
+    """PDF / filing URLs and dated text beat an undated blog when backing ties."""
+    pdf = any(urlsplit(url).path.lower().endswith(".pdf") for url in line.urls)
+    dated = bool(
+        re.search(r"\b(?:20\d{2}|fy\s?\d{2,4}|q[1-4])\b", line.text, flags=re.I)
+    )
+    return (1 if pdf else 0, 1 if dated else 0)
 
 
 def _key(value: str) -> str:

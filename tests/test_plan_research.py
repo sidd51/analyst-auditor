@@ -14,7 +14,7 @@ from src.models import (
 )
 from src.page_budget import page_policy_from_settings
 from src.period import resolve_time_period, split_entities
-from src.plan_research import finalize_plan, plan_research
+from src.plan_research import finalize_plan, plan_research, targets_are_known
 from tests.test_config import valid_settings
 
 
@@ -182,6 +182,72 @@ def test_last_two_years_resolves_from_the_as_of_date() -> None:
     )
     assert named == ["Titan Company"]
     assert categories == ["Indian jewellery retailers"]
+
+
+def test_memory_skip_matches_md_status_to_known_md_fact() -> None:
+    fact = (
+        "Titan Company / full name (corroborated): Ajoy Chawla is the "
+        "Managing Director of Titan Company Limited."
+    )
+    assert targets_are_known(
+        ["md status"],
+        ["full name"],
+        known_facts=[fact],
+    )
+    assert targets_are_known(
+        ["appointment_date"],
+        ["effective appointment date"],
+    )
+
+
+def test_memory_skip_does_not_treat_predecessor_as_the_md_fact() -> None:
+    fact = (
+        "Titan Company / full name (corroborated): Ajoy Chawla is the "
+        "Managing Director of Titan Company Limited."
+    )
+    assert (
+        targets_are_known(
+            ["predecessor_name"],
+            ["full name", "effective appointment date"],
+            known_facts=[fact],
+        )
+        is False
+    )
+    assert (
+        targets_are_known(
+            ["jewellery brand"],
+            ["full name"],
+            known_facts=[fact],
+        )
+        is False
+    )
+
+
+def test_finalize_plan_skips_known_md_query_and_keeps_brand() -> None:
+    settings = valid_settings()
+    drafted = PlannerOutput(
+        queries=[
+            query("Titan Company Managing Director 2026 verify", "md status"),
+            query("Titan jewellery brand Tanishq", "jewellery brand"),
+        ]
+    )
+    fact = (
+        "Titan Company / full name (corroborated): Ajoy Chawla is the "
+        "Managing Director of Titan Company Limited."
+    )
+    plan = finalize_plan(
+        titan_specified(),
+        drafted,
+        settings,
+        known_facts=[fact],
+        covered_fields=["full name"],
+    )
+    assert [item.query for item in plan.queries] == [
+        "Titan jewellery brand Tanishq"
+    ]
+    assert [item.query for item in plan.skipped_queries] == [
+        "Titan Company Managing Director 2026 verify"
+    ]
 
 
 def test_empty_query_list_fails_closed() -> None:

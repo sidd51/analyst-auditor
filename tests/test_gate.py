@@ -1,9 +1,10 @@
 """Offline tests for the deterministic completeness gate."""
 
-from src.gate import citation_label, close_answer, render_answer
+from src.gate import citation_label, close_answer, collapse_duplicate_fields, render_answer
 from src.models import (
     AnalystClaim,
     AnalystResult,
+    AnswerLine,
     AuditReport,
     ClaimAudit,
     CrossCheckReport,
@@ -180,7 +181,7 @@ def test_contradicted_claim_goes_to_disputed() -> None:
     assert "Cited page says April 2026." in rendered
 
 
-def test_cross_check_conflict_disputes_a_supported_claim() -> None:
+def test_cross_check_conflict_does_not_veto_auditor_supported() -> None:
     answer = close_answer(
         titan_specified(),
         analyst(titan_md(), titan_date()),
@@ -198,9 +199,56 @@ def test_cross_check_conflict_disputes_a_supported_claim() -> None:
             ]
         ),
     )
-    assert answer.complete is False
+    assert answer.complete is True
+    assert [item.claim_id for item in answer.accepted] == ["C01", "C02"]
+
+
+def test_cross_check_conflict_still_drops_when_auditor_did_not_support() -> None:
+    answer = close_answer(
+        titan_specified(),
+        analyst(titan_md(), titan_date()),
+        audit(
+            ("C01", "SUPPORTED", "Name is on the page."),
+            ("C02", "UNSUPPORTED", "Cited page is silent."),
+        ),
+        CrossCheckReport(
+            verdicts=[
+                CrossCheckVerdict(
+                    claim_id="C02",
+                    status="conflicting",
+                    reason="Independent page says 2024.",
+                )
+            ]
+        ),
+    )
     assert [item.claim_id for item in answer.accepted] == ["C01"]
-    assert answer.disputed[0].reason == "Independent source conflicts with this claim."
+    assert answer.disputed[0].claim_id == "C02"
+
+
+def test_collapse_prefers_dated_pdf_over_undated_blog() -> None:
+    kept, disputed = collapse_duplicate_fields(
+        [
+            AnswerLine(
+                field="store_network_number",
+                text="Titan currently has 900 stores.",
+                claim_id="C05",
+                urls=["https://www.livemint.com/companies/titan"],
+                sources=["livemint.com"],
+            ),
+            AnswerLine(
+                field="store_network_number",
+                text=(
+                    "Titan had a retail chain of 3,377 stores as of Q4FY26."
+                ),
+                claim_id="C06",
+                urls=["https://www.icicidirect.com/mailcontent/idirect_titan_q4fy26.pdf"],
+                sources=["icicidirect.com PDF"],
+            ),
+        ],
+        None,
+    )
+    assert [item.claim_id for item in kept] == ["C06"]
+    assert disputed[0].claim_id == "C05"
 
 
 def test_ranking_shortfall_is_incomplete() -> None:

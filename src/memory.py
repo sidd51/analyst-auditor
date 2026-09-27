@@ -111,7 +111,9 @@ class EntityMemory:
         rejected = [item for item in rejects if item.status == "rejected"][:cap]
         return MemoryRecall(
             known_facts=[_fact_line(item) for item in facts],
+            known_fields=[item.field for item in facts],
             disputed_notes=[_reject_line(item) for item in disputed],
+            disputed_fields=[item.field for item in disputed],
             rejected_notes=[_reject_line(item) for item in rejected],
         )
 

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from dataclasses import dataclass
 
 from src.audit import audit_claims
 from src.collect_evidence import collect_evidence, collect_wave2
 from src.config import Settings, load_settings
+from src.cost import CostRecord
 from src.cross_check import cross_check_claims
 from src.gate import close_answer, render_answer
 from src.llm import OpenRouterLLM, StructuredResult
@@ -16,9 +19,14 @@ from src.models import (
     AnalystClaim,
     AnalystDraft,
     AnalystResult,
+    AuditReport,
+    CrossCheckReport,
     DraftClaim,
     DraftUnanswered,
     EvidencePacket,
+    FinalAnswer,
+    MemoryRecall,
+    ResearchPlan,
     SpecifiedQuestion,
     UnansweredField,
 )
@@ -43,6 +51,10 @@ Rules:
 - A single in-window "opened" or "added" number is still a claim even if
   you cannot complete the full ranking or requested count.
 - Write at most three short notes. Notes may mention plans. Notes are not claims.
+- If you choose one figure as the latest, also emit that number on
+  chosen_figure_count. Do not leave that field only in the reason.
+- If a required field is a jewellery brand or brand name, the claim
+  text must be the brand token only, not a title or a full sentence.
 - Do not decide whether the answer is complete.
 """
 
@@ -282,6 +294,141 @@ def analyze_evidence(
     )
 
 
+@dataclass
+class QuestionRun:
+    """One full pipeline pass, including costs and wall-clock."""
+
+    specified: SpecifiedQuestion
+    planned: ResearchPlan
+    packet: EvidencePacket
+    analyzed: AnalystResult
+    checked: CrossCheckReport
+    audited: AuditReport
+    final: FinalAnswer
+    recalled: MemoryRecall
+    specify_cost: CostRecord
+    plan_cost: CostRecord
+    analyze_cost: CostRecord
+    cross_check_cost: CostRecord
+    audit_cost: CostRecord
+    wall_seconds: float
+
+    @property
+    def total_cost(self) -> CostRecord:
+        return (
+            self.specify_cost.plus(self.plan_cost)
+            .plus(self.analyze_cost)
+            .plus(self.cross_check_cost)
+            .plus(self.audit_cost)
+        )
+
+
+def run_question(
+    question: str,
+    notes: list[str],
+    settings: Settings,
+    tracer: JsonlTracer,
+    llm: OpenRouterLLM,
+    memory: EntityMemory,
+) -> QuestionRun:
+    """Specify → plan → collect → analyze → optional wave 2 → check → audit → gate."""
+    started = time.perf_counter()
+    specified = specify_question(question, notes, settings, llm)
+    recalled = memory.recall(
+        specified.value,
+        limit=settings.max_memory_prompt_items,
+    )
+    planned = plan_research(
+        specified.value,
+        settings,
+        llm,
+        known_facts=recalled.known_facts,
+        disputed_notes=recalled.disputed_notes,
+        rejected_notes=recalled.rejected_notes,
+        covered_fields=recalled.known_fields,
+        disputed_fields=recalled.disputed_fields,
+    )
+    packet = collect_evidence(planned.value, settings, tracer)
+    analyzed = analyze_evidence(packet, settings, llm)
+    if should_fetch_wave2(packet, analyzed.value, settings):
+        gaps = missing_required_fields(analyzed.value, specified.value)
+        tracer.event(
+            "wave2_start",
+            fields=gaps,
+            unused_urls=packet.unused_urls,
+            next_wave_size=packet.next_wave_size,
+        )
+        packet = collect_wave2(packet, settings, tracer, gaps)
+        if packet.retrieval.passages:
+            second = analyze_evidence(
+                packet,
+                settings,
+                llm,
+                focus_fields=gaps,
+            )
+            analyzed = StructuredResult(
+                value=merge_analyst_results(
+                    analyzed.value,
+                    second.value,
+                    packet,
+                    settings,
+                ),
+                cost=analyzed.cost.plus(second.cost),
+                generation_id=second.generation_id,
+            )
+        tracer.event(
+            "wave2_end",
+            pages_used=packet.pages_used,
+            claims=len(analyzed.value.claims),
+            unanswered=[item.field for item in analyzed.value.unanswered],
+        )
+    checked = cross_check_claims(
+        analyzed.value.claims,
+        specified.value,
+        settings,
+        tracer,
+        llm=llm,
+        known_pages=packet.fetched.pages,
+    )
+    audited = audit_claims(
+        analyzed.value.claims,
+        specified.value,
+        settings,
+        tracer,
+        llm=llm,
+    )
+    final = close_answer(
+        specified.value,
+        analyzed.value,
+        audited.value,
+        checked.value,
+    )
+    memory.update_from_run(
+        specified.value,
+        analyzed.value,
+        final,
+        checked.value,
+    )
+    memory.save()
+    wall_seconds = time.perf_counter() - started
+    return QuestionRun(
+        specified=specified.value,
+        planned=planned.value,
+        packet=packet,
+        analyzed=analyzed.value,
+        checked=checked.value,
+        audited=audited.value,
+        final=final,
+        recalled=recalled,
+        specify_cost=specified.cost,
+        plan_cost=planned.cost,
+        analyze_cost=analyzed.cost,
+        cross_check_cost=checked.cost,
+        audit_cost=audited.cost,
+        wall_seconds=wall_seconds,
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -309,113 +456,58 @@ def main(argv: list[str] | None = None) -> int:
     tracer.event("run_start", step="step4d_analyze", question=args.question)
     memory = EntityMemory.load(settings)
     try:
-        specified = specify_question(args.question, args.note, settings, llm)
-        recalled = memory.recall(
-            specified.value,
-            limit=settings.max_memory_prompt_items,
-        )
-        planned = plan_research(
-            specified.value,
-            settings,
-            llm,
-            known_facts=recalled.known_facts,
-            disputed_notes=recalled.disputed_notes,
-            rejected_notes=recalled.rejected_notes,
-        )
-        packet = collect_evidence(planned.value, settings, tracer)
-        analyzed = analyze_evidence(packet, settings, llm)
-        if should_fetch_wave2(packet, analyzed.value, settings):
-            gaps = missing_required_fields(analyzed.value, specified.value)
-            tracer.event(
-                "wave2_start",
-                fields=gaps,
-                unused_urls=packet.unused_urls,
-                next_wave_size=packet.next_wave_size,
-            )
-            packet = collect_wave2(packet, settings, tracer, gaps)
-            if packet.retrieval.passages:
-                second = analyze_evidence(
-                    packet,
-                    settings,
-                    llm,
-                    focus_fields=gaps,
-                )
-                analyzed = StructuredResult(
-                    value=merge_analyst_results(
-                        analyzed.value,
-                        second.value,
-                        packet,
-                        settings,
-                    ),
-                    cost=analyzed.cost.plus(second.cost),
-                    generation_id=second.generation_id,
-                )
-            tracer.event(
-                "wave2_end",
-                pages_used=packet.pages_used,
-                claims=len(analyzed.value.claims),
-                unanswered=[item.field for item in analyzed.value.unanswered],
-            )
-        checked = cross_check_claims(
-            analyzed.value.claims,
-            specified.value,
-            settings,
-            tracer,
-            llm=llm,
-            known_pages=packet.fetched.pages,
-        )
-        audited = audit_claims(
-            analyzed.value.claims,
-            specified.value,
-            settings,
-            tracer,
-            llm=llm,
-        )
-        final = close_answer(
-            specified.value,
-            analyzed.value,
-            audited.value,
-            checked.value,
-        )
-        memory.update_from_run(
-            specified.value,
-            analyzed.value,
-            final,
-            checked.value,
-        )
-        memory.save()
+        run = run_question(args.question, args.note, settings, tracer, llm, memory)
     except Exception as exc:
         tracer.event("run_end", ok=False)
         print(f"FAIL: {type(exc).__name__}: {exc}")
         print(f"Trace: {trace_path}")
         return 1
 
-    result = analyzed.value
-    tracer.event("analyst_result", **result.model_dump())
-    tracer.event("final_answer", **final.model_dump())
+    _trace_run(tracer, run, memory)
+    _print_run(run, memory, trace_path)
+    return 0
+
+
+def _trace_run(tracer: JsonlTracer, run: QuestionRun, memory: EntityMemory) -> None:
+    tracer.event("analyst_result", **run.analyzed.model_dump())
+    tracer.event("final_answer", **run.final.model_dump())
     tracer.event(
         "memory_write",
         path=str(memory.path),
         facts=len(memory.snapshot.facts),
         rejects=len(memory.snapshot.rejects),
-        recalled_facts=recalled.known_facts,
+        recalled_facts=run.recalled.known_facts,
+        skipped_queries=[item.model_dump() for item in run.planned.skipped_queries],
     )
+    cost = run.total_cost
     tracer.event(
         "run_end",
         ok=True,
-        complete=final.complete,
-        specify_cost=specified.cost.as_dict(),
-        plan_cost=planned.cost.as_dict(),
-        analyze_cost=analyzed.cost.as_dict(),
-        cross_check_cost=checked.cost.as_dict(),
-        audit_cost=audited.cost.as_dict(),
+        complete=run.final.complete,
+        wall_seconds=round(run.wall_seconds, 3),
+        specify_cost=run.specify_cost.as_dict(),
+        plan_cost=run.plan_cost.as_dict(),
+        analyze_cost=run.analyze_cost.as_dict(),
+        cross_check_cost=run.cross_check_cost.as_dict(),
+        audit_cost=run.audit_cost.as_dict(),
+        total_tokens=cost.total_tokens,
+        cost_usd=cost.cost_usd,
+        cost_inr=cost.cost_inr,
     )
 
+
+def _print_run(run: QuestionRun, memory: EntityMemory, trace_path) -> None:
+    packet = run.packet
+    result = run.analyzed
     print(
         f"Pages used: {packet.pages_used} | "
         f"Unused leftovers: {len(packet.unused_urls)} | "
         f"Next wave: {packet.next_wave_size}"
     )
+    if run.planned.skipped_queries:
+        print(f"Skipped memory-covered queries: {len(run.planned.skipped_queries)}")
+        for item in run.planned.skipped_queries:
+            print(f"- {item.query}")
     print(f"Supported claims: {len(result.claims)}")
     for claim in result.claims:
         print(f"- {claim.claim_id} [{claim.field}] {claim.text}")
@@ -431,37 +523,37 @@ def main(argv: list[str] | None = None) -> int:
     if result.dropped_drafts:
         print(f"Dropped unsupported drafts: {result.dropped_drafts}")
     print("Cross-check:")
-    for verdict in checked.value.verdicts:
+    for verdict in run.checked.verdicts:
         extra = f" → {verdict.independent_url}" if verdict.independent_url else ""
         print(f"- {verdict.claim_id} {verdict.status}{extra}")
         print(f"  {verdict.reason}")
     print("Auditor:")
-    for verdict in audited.value.verdicts:
+    for verdict in run.audited.verdicts:
         print(f"- {verdict.claim_id} {verdict.verdict}")
         print(f"  {verdict.reason}")
         for note in verdict.source_notes:
             print(f"  {note.source_id} {note.support}: {note.reason}")
     print()
-    print(render_answer(final))
+    print(render_answer(run.final))
     print(
         f"Memory: {len(memory.snapshot.facts)} fact(s), "
         f"{len(memory.snapshot.rejects)} note(s) → {memory.path}"
     )
+    cost = run.total_cost
     print(
         "Tokens: "
-        f"specify {specified.cost.total_tokens} | "
-        f"plan {planned.cost.total_tokens} | "
-        f"analyze {analyzed.cost.total_tokens} | "
-        f"cross-check {checked.cost.total_tokens} | "
-        f"audit {audited.cost.total_tokens}"
+        f"specify {run.specify_cost.total_tokens} | "
+        f"plan {run.plan_cost.total_tokens} | "
+        f"analyze {run.analyze_cost.total_tokens} | "
+        f"cross-check {run.cross_check_cost.total_tokens} | "
+        f"audit {run.audit_cost.total_tokens}"
     )
+    print(f"Wall-clock: {run.wall_seconds:.1f}s")
     print(
         "Estimated LLM cost: "
-        f"${specified.cost.cost_usd + planned.cost.cost_usd + analyzed.cost.cost_usd + checked.cost.cost_usd + audited.cost.cost_usd:.8f} / "
-        f"₹{specified.cost.cost_inr + planned.cost.cost_inr + analyzed.cost.cost_inr + checked.cost.cost_inr + audited.cost.cost_inr:.6f}"
+        f"${cost.cost_usd:.8f} / ₹{cost.cost_inr:.6f}"
     )
     print(f"Trace: {trace_path}")
-    return 0
 
 
 if __name__ == "__main__":

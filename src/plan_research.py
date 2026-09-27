@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 from src.config import Settings, load_settings
 from src.llm import OpenRouterLLM, StructuredResult
 from src.memory import EntityMemory
-from src.models import PlannerOutput, ResearchPlan, SpecifiedQuestion
+from src.models import PlannedQuery, PlannerOutput, ResearchPlan, SpecifiedQuestion
 from src.period import split_entities
 from src.specify import specify_question
 from src.trace import JsonlTracer
@@ -21,12 +22,14 @@ Rules:
 - Propose 2 to 4 focused search queries.
 - Use the resolved time period and as-of date in every dated query.
 - Do not convert "last two years" into older years than the resolved range.
-- Tag every query with the required fields it is trying to cover.
+- Tag every query with only the fields that query is meant to fill,
+  not every required field.
 - Prefer official, news, and regulatory wording over vague questions.
 - Do not repeat the same query with tiny wording changes.
 - Do not answer the question.
 - Do not decide how many pages to fetch.
 - If known facts are listed, do not search for those facts again.
+- Python will drop queries whose targets are already known.
 - If a field is listed as disputed, do not treat either value as known.
   Search again for that field.
 - Do not reuse rejected sentences as answers.
@@ -45,20 +48,33 @@ def finalize_plan(
     known_facts: list[str] | None = None,
     disputed_notes: list[str] | None = None,
     rejected_notes: list[str] | None = None,
+    covered_fields: list[str] | None = None,
+    disputed_fields: list[str] | None = None,
 ) -> ResearchPlan:
-    """Deduplicate queries and keep only the first `max_planner_queries`."""
+    """Deduplicate, drop memory-covered targets, then cap the list."""
     seen: set[str] = set()
-    kept = []
+    unique: list[PlannedQuery] = []
     for item in drafted.queries:
         query = " ".join(item.query.split())
         key = query.casefold()
         if not query or key in seen:
             continue
         seen.add(key)
-        kept.append(item.model_copy(update={"query": query}))
+        unique.append(item.model_copy(update={"query": query}))
 
-    if not kept:
+    if not unique:
         raise ValueError("planner returned no usable search queries")
+
+    skipped, kept = _split_covered_queries(
+        unique,
+        covered_fields=covered_fields or [],
+        disputed_fields=disputed_fields or [],
+        known_facts=known_facts or [],
+    )
+    if not kept:
+        # Still open one verify search so Analyst is not answering from memory text.
+        kept = [unique[0]]
+        skipped = [item for item in skipped if item.query != unique[0].query]
 
     limit = settings.max_planner_queries
     return ResearchPlan(
@@ -67,8 +83,135 @@ def finalize_plan(
         known_facts=list(known_facts or []),
         disputed_notes=list(disputed_notes or []),
         rejected_notes=list(rejected_notes or []),
+        skipped_queries=skipped,
         truncated=len(kept) > limit,
     )
+
+
+MUST_SEARCH_WORDS = frozenset(
+    {
+        "predecessor",
+        "successor",
+        "brand",
+        "investor",
+        "investors",
+        "funding",
+    }
+)
+GENERIC_FIELD_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "date",
+        "field",
+        "for",
+        "full",
+        "name",
+        "of",
+        "or",
+        "person",
+        "status",
+        "the",
+        "title",
+        "with",
+    }
+)
+
+
+def targets_are_known(
+    targets: list[str],
+    covered_fields: list[str],
+    disputed_fields: list[str] | None = None,
+    known_facts: list[str] | None = None,
+) -> bool:
+    """True when every target is already a known fact and none are disputed."""
+    if not targets:
+        return False
+    if not covered_fields and not known_facts:
+        return False
+    for target in targets:
+        if not _target_is_known(
+            target,
+            covered_fields,
+            disputed_fields or [],
+            known_facts or [],
+        ):
+            return False
+    return True
+
+
+def _split_covered_queries(
+    queries: list[PlannedQuery],
+    *,
+    covered_fields: list[str],
+    disputed_fields: list[str],
+    known_facts: list[str] | None = None,
+) -> tuple[list[PlannedQuery], list[PlannedQuery]]:
+    skipped: list[PlannedQuery] = []
+    kept: list[PlannedQuery] = []
+    for item in queries:
+        if targets_are_known(
+            item.targets,
+            covered_fields,
+            disputed_fields,
+            known_facts,
+        ):
+            skipped.append(item)
+        else:
+            kept.append(item)
+    return skipped, kept
+
+
+def _field_key(value: str) -> str:
+    return " ".join(value.replace("_", " ").casefold().split())
+
+
+def _expand_aliases(text: str) -> str:
+    out = text
+    out = re.sub(r"\bmd\b", "managing director", out)
+    out = re.sub(r"\bceo\b", "chief executive", out)
+    return " ".join(out.split())
+
+
+def _fields_match(left: str, right: str) -> bool:
+    return left == right or left in right or right in left
+
+
+def _target_is_known(
+    target: str,
+    covered_fields: list[str],
+    disputed_fields: list[str],
+    known_facts: list[str],
+) -> bool:
+    key = _field_key(target)
+    if not key:
+        return False
+    blocked = {_field_key(item) for item in disputed_fields}
+    if key in blocked or any(_fields_match(key, item) for item in blocked):
+        return False
+    known = {_field_key(item) for item in covered_fields}
+    expanded = _expand_aliases(key)
+    known_expanded = {_expand_aliases(item) for item in known}
+    if any(
+        _fields_match(expanded, item) or _fields_match(key, item)
+        for item in known | known_expanded
+    ):
+        return True
+    if set(key.split()) & MUST_SEARCH_WORDS:
+        return False
+    words = {
+        word
+        for word in _expand_aliases(key).split()
+        if len(word) > 2 and word not in GENERIC_FIELD_WORDS
+    }
+    if len(words) < 2:
+        return False
+    for fact in known_facts:
+        fact_key = _field_key(fact)
+        if sum(1 for word in words if word in fact_key) >= 2:
+            return True
+    return False
 
 
 def plan_research(
@@ -79,6 +222,8 @@ def plan_research(
     known_facts: list[str] | None = None,
     disputed_notes: list[str] | None = None,
     rejected_notes: list[str] | None = None,
+    covered_fields: list[str] | None = None,
+    disputed_fields: list[str] | None = None,
 ) -> StructuredResult[ResearchPlan]:
     """Ask the model for queries, then cap and clean the list in Python."""
     facts = [fact.strip() for fact in (known_facts or []) if fact.strip()]
@@ -127,6 +272,8 @@ def plan_research(
         known_facts=facts,
         disputed_notes=disputed,
         rejected_notes=rejected,
+        covered_fields=covered_fields,
+        disputed_fields=disputed_fields,
     )
     return StructuredResult(
         value=plan,
@@ -173,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
             known_facts=recalled.known_facts,
             disputed_notes=recalled.disputed_notes,
             rejected_notes=recalled.rejected_notes,
+            covered_fields=recalled.known_fields,
+            disputed_fields=recalled.disputed_fields,
         )
     except Exception as exc:
         tracer.event("run_end", ok=False)
