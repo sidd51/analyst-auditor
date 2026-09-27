@@ -1,54 +1,76 @@
-# Session log
+# Session
+I took help of Cursor Agent.
+## 21 Sep 2026 — stack
 
-## 21/09/2026
+Cursor first suggested TypeScript + Gemini.
+I chose Python + OpenRouter instead. I wanted more Python practice, and OpenRouter lets me swap models with one key.
 
-- Cursor first suggested TypeScript + Gemini as Project Stack.
-- I choose **Python + OpenRouter** instead, because I wanted to practice Python more and OpenRouter provides wide variety of models.
+### Earlier Architecture
+I used DuckDuckGo (`ddgs`) instead of Brave Search for Search.
+Why not Brave: Brave Search API asked for card details.
+What I traded: DuckDuckGo is unofficial. The result keys were `href` and `body`, not `url` and `snippet`, so my first run printed `None` for links. Brave would be more stable if `ddgs` starts failing.
 
-### Step 2
+Fetch: the first Wikipedia extract was mostly the menu. I strip `nav` / `header` / `footer` and prefer `<main>` so the analyst gets article text.
 
-- prompt_tokens / completion_tokens: 40 / 13
-- cost_usd / cost_inr: 1.38e-05 / 0.0012
-- The JSON came back as `{"ping":"pong",...}`
+### Shortcomings I wrote down on the first architecture
 
-### Step 3 — search and fetch
+1. `ddgs` is flaky. Same queries: first run got Wikipedia + titancompany.in, next run timed out and printed empty URLs. It is unofficial HTML scraping, not a real API.
+4. Empty “successful” fetches. `titancompany.in/node/2412` was `ok: True` but no text (JS / thin page). 
+5. We only fetched the first 3 URLs. Later links never got opened.
+6. I limited page content to 3000 characters (`page["text"][:3000]`).
+There were two cuts:
+- `fetch_page(..., max_chars=5000)` — chopped on download
+- `page["text"][:3000]` — chopped again before the model
+The MD/CEO line must be somewhere lower on the page.But,the model said `not_found` even though the name was on the page.
 
-- I used **DuckDuckGo (**`ddgs`**)** instead of Brave Search.
-- Why not Brave: Brave needs an API key while `ddgs` is free and I wanted minimal setup.
-- What I am trading off: DuckDuckGo is unofficial. The result keys were `href` and `body`, not `url` and `snippet`, so my first run printed `None` for links. Brave would be more stable if `ddgs` starts failing.
-- Fetch: first Wikipedia extract was mostly the menu. I strip `nav` / `header` / `footer` and prefer `<main>` so the analyst gets article text and not some useless stuff.
+## I restarted
+There were too many structural faults.
+Cursor would have patched some of the faults up.
 
-### Step 4 — analyst loop (before extract)
+What I wanted in the new build:
+# The new Architecture:
+Stack : Python, Langchain - for easy orchestration, Pydantic - structured schemas, Tavily/DDGS - search 
 
-- Plan-before-search works. The model returns queries to run.
-- Search + fetch also sometimes works with`ddgs` . Best page so far: `titancompany.in/leadership-team` (Ajoy Chawla MD, Arun Narayan CEO Jewellery).
+- specify the question (entities, fields, dates) through a small LLM call before planning --this would help answer what was really asked and required.
+- Tavily as primary search, DDGS only as fallback cause DDGS was flaky. 
+- To encounter the problem of Context cutoff I introduced a conditional check for waves of pages, initially 5 pages each url then +4 if required fields are missing, never more than 15.
+-instead of first-3000 clip — the pages were split into passages and scored against the required fields and only the best passages were sent to Analyst. 
+- plan before any search that returned 2 to 4 focused queries tagged to  a specific requirement 
+- these changes were done because in earlier architecture the queries were kind of irrelevant and did not contribute to the expected answer.
+- This was my consious decision that, python decides whether the answer is complete.
 
-#### Why I did not switch to Brave
-- I tried. Brave Search API asks for card details, which as a student I didn't had
-- Cursor suggested Wikipedia API / OpenRouter web as a backup. I chose to **keep `ddgs`** instead of adding another paid path and keeping it simple.
+### I made the final block a **Python gate**: 
+only Auditor-`SUPPORTED` claims are shown. Missing and disputed stay visible. There is no extra model call after the auditor.
 
-#### Shortcomings I already know 
-1. **`ddgs` is flaky.** Same queries: first run got Wikipedia + titancompany.in, next run timed out and printed empty `URLS:`.Because I think its is unofficial HTML scraping and not a real API. 
-2. **`ddgs` is not only DuckDuckGo.** Default `auto` even hit Brave’s public HTML page, then timed out — without a Brave key.
-3. **Retrying search is the real failure.** `run_fetches` plans + searches again every time. That burns the rate limit.
-4. **Empty “successful” fetches.** `titancompany.in/node/2412` was `ok: True` but no text (JS/thin page). `ok` is not the same as evidence.
-7. **We only fetch the first 3 URLs.** Later links (Tanishq Wikipedia, etc.) never get opened.
-8. **No parallel search/fetch yet.** The loop is still one-after-another, so a timeout feels like a hang.
-9. **Wikipedia/Yahoo “No results found” looks like a crash** in the log even when the next backend works. 
+## Analyst tense — I kept the strict rule
+Jewellery pages are full of “will open” and “plans to add.” I did not let those become claims.
 
-### Extraction of Claims
--So, while extracting claims I am limiting the page content to 3000 characters `"text": page["text"][:3000]` 
-Two cuts already exist:
+Live Q04 asked for Titan’s store-addition *plan*. Analyst returned 0 claims.That is what the rule is supposed to do.
 
-`fetch_page(..., max_chars=5000)` — page is chopped when you download
-`page["text"][:3000]` — chopped again before the model sees it
+Cursor suggested to loosened `will` / `plans` so the score looked better.
+I did not. I **changed the question** to something the open web actually states: whom Ajoy succeeded, and when that person retired.
 
-ShortComing: The MD/CEO line might be much lower, so the model never sees it and says not_found even though the page had the name.
+## Eval
+I ran `python -m src.eval.run --fresh`.
+Q01–Q04 (or similar) spent the in-flight budget. Q05–Q08 died on OpenRouter 402 (`Retry-After: 120`).
+Later Q08 died again: not in-flight — the wallet could only reserve 368–1782 tokens against a 2000 max.
 
-So: yes, a blunt cap loses context. No, unlimited text is not the fix because cost increase per token.
+I ran the naive baseline myself:
 
-Only when the cost was not an issue, I wished to send full pages as context to avoid the not-found message to user.
+```bash
+python -m src.eval.naive --qid Q01
+python -m src.eval.naive --qid Q03
+```
 
-### I am doing parallel fetch using ThreadPoolExecutor
+Naive Q01: C.K. Venkataraman, 1 Oct 2020, board-page URL.
+Loop Q01: Ajoy Chawla, 1 Jan 2026.
+Naive was ₹0.02 / 3s. Loop was ₹0.37 / 22s.
+I keep the loop because the cheap answer is a year out of date.
 
-## I am restarting the project there were too many shortcoming in the previous architecture
+Naive Q03 and the loop Q03 were both empty. Naive: cutoff. Loop: no quoted “opened.” I prefer the second kind of empty.
+
+## After the scoreboard 
+- Q03: 0 claims, 143s. Wave 2 still ran. I will not turn plans into openings.
+- Cost: Q01 ₹0.37 → Q08 ₹0.34 (8%), not half. Skip fired once on Q06/Q07/Q08. That is not a cost win.
+- Auditor table this run: all `SUPPORTED`, no `CONTRADICTED`. Analyst already drops unquoted drafts. The auditor checks the citation, not “did we answer the question.”
+
