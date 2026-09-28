@@ -8,7 +8,6 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 - Quote-lock: a claim is kept only if its quote appears on the fetched page.
 - Independent auditor: cited URLs are refetched and judged `SUPPORTED`, `UNSUPPORTED`, `CONTRADICTED`, or `UNCITED`.
 - Python gate: completeness is a required-field check. The model does not write the final answer.
-- Plans are not claims: “will open” / “targets” never become facts.
 - Entity memory: accepted facts only. If every required field is already known, reopen 1–2 stored URLs and skip a full search.
 - Cite-a-page: that verify query is not dropped just because the fact is already in memory.
 - Bounded fetch: 5 pages, then +4 if fields are still missing, never more than 15.
