@@ -58,39 +58,49 @@ def collect_evidence(
     searcher: WebSearch | None = None,
     fetcher: ParallelFetcher | None = None,
     retriever: PassageRetriever | None = None,
+    priority_urls: list[str] | None = None,
+    memory_verify: bool = False,
 ) -> EvidencePacket:
     """Search sequentially, fetch wave 1, then keep only relevant passages.
 
     Later leftovers stay in unused_urls. Wave 2 runs only after Analyst 1
-    if a required field is still missing.
+    if a required field is still missing. Memory verify skips search and
+    reopens 1–2 stored URLs instead.
     """
     searcher = searcher or WebSearch(settings, tracer)
     fetcher = fetcher or ParallelFetcher(settings, tracer)
     retriever = retriever or PassageRetriever(settings, tracer)
 
     searches: list[SearchResponse] = []
-    # Search stays sequential. Parallel DDGS/Tavily calls previously
-    # increased timeouts and rate limits.
-    for item in plan.queries:
-        tracer.event(
-            "planned_search",
-            query=item.query,
-            targets=item.targets,
-            reason=item.reason,
-        )
-        searches.append(searcher.search(item.query))
+    if not memory_verify:
+        for item in plan.queries:
+            tracer.event(
+                "planned_search",
+                query=item.query,
+                targets=item.targets,
+                reason=item.reason,
+            )
+            searches.append(searcher.search(item.query))
 
-    candidates = merge_search_hits(searches)
-    wave_size = next_fetch_wave(0, settings)
+    candidates = _prepend_priority(
+        priority_urls or [],
+        merge_search_hits(searches),
+    )
+    if memory_verify:
+        wave_size = min(2, len(candidates), settings.absolute_page_ceiling)
+    else:
+        wave_size = next_fetch_wave(0, settings)
     fetched = fetcher.fetch_many(
         [item.url for item in candidates],
         page_limit=wave_size,
     )
     pages_used = fetched.selected_count
     fetched_keys = {_url_key(page.url) for page in fetched.pages}
-    unused_urls = [
-        item.url for item in candidates if _url_key(item.url) not in fetched_keys
-    ]
+    unused_urls = (
+        []
+        if memory_verify
+        else [item.url for item in candidates if _url_key(item.url) not in fetched_keys]
+    )
 
     spec = plan.specified.specification
     retrieval = retriever.retrieve(
@@ -105,8 +115,9 @@ def collect_evidence(
         fetched=fetched,
         retrieval=retrieval,
         pages_used=pages_used,
-        next_wave_size=next_fetch_wave(pages_used, settings),
+        next_wave_size=0 if memory_verify else next_fetch_wave(pages_used, settings),
         unused_urls=unused_urls,
+        memory_verify=memory_verify,
     )
     tracer.event(
         "evidence_packet",
@@ -119,6 +130,31 @@ def collect_evidence(
     return packet
 
 
+def _prepend_priority(
+    urls: list[str],
+    candidates: list[CandidateUrl],
+) -> list[CandidateUrl]:
+    """Fetch stored citations before new search hits."""
+    extras: list[CandidateUrl] = []
+    seen: set[str] = set()
+    for url in urls:
+        key = _url_key(url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        extras.append(
+            CandidateUrl(
+                url=url,
+                title="",
+                snippet="Stored citation from memory.",
+                discovered_by=["memory"],
+                providers=["memory"],
+            )
+        )
+    rest = [item for item in candidates if _url_key(item.url) not in seen]
+    return extras + rest
+
+
 def collect_wave2(
     packet: EvidencePacket,
     settings: Settings,
@@ -129,6 +165,8 @@ def collect_wave2(
     retriever: PassageRetriever | None = None,
 ) -> EvidencePacket:
     """Fetch the next leftover pages. No new search. Stop after this wave."""
+    if packet.memory_verify:
+        return packet
     wave_size = next_fetch_wave(packet.pages_used, settings)
     if wave_size <= 0 or not packet.unused_urls:
         return packet

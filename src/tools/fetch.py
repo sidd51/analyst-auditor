@@ -37,7 +37,12 @@ JUNK_DOMAINS = (
     "rocketreach.co",
     "crunchbase.com",
 )
-JUNK_PATH_MARKERS = ("/error-page", "/paywall")
+STOCK_QUOTE_DOMAINS = (
+    "scanx.trade",
+    "screener.in",
+    "tradingview.com",
+)
+JUNK_PATH_MARKERS = ("/error-page", "/paywall", "/sample-data/")
 
 
 def _host_matches(host: str, domains: tuple[str, ...]) -> bool:
@@ -54,9 +59,11 @@ def is_login_wall(host: str) -> bool:
 
 
 def is_junk_url(url: str) -> bool:
-    """Skip contact-DB walls and error/paywall paths before they use a slot."""
+    """Skip contact-DB walls, stock-quote hosts, and dummy/error paths."""
     parsed = urlsplit(url)
     if _host_matches(parsed.netloc, JUNK_DOMAINS):
+        return True
+    if _host_matches(parsed.netloc, STOCK_QUOTE_DOMAINS):
         return True
     path = parsed.path.lower()
     return any(marker in path for marker in JUNK_PATH_MARKERS)

@@ -235,6 +235,7 @@ class EvidencePacket(BaseModel):
     pages_used: int
     next_wave_size: int
     unused_urls: list[str] = Field(default_factory=list)
+    memory_verify: bool = False
 
 
 class DraftClaim(BaseModel):
@@ -448,6 +449,7 @@ class MemorySnapshot(BaseModel):
 class MemoryRecall(BaseModel):
     """Prompt lines for the planner. Facts and warnings stay separate."""
 
+    facts: list[MemoryFact] = Field(default_factory=list)
     known_facts: list[str] = Field(default_factory=list)
     known_fields: list[str] = Field(default_factory=list)
     disputed_notes: list[str] = Field(default_factory=list)

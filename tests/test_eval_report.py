@@ -6,7 +6,7 @@ from src.eval.questions import QUESTIONS, by_id
 from src.eval.report import write_reports
 
 
-def test_locked_set_has_eight_questions_and_two_reuse() -> None:
+def test_locked_set_includes_q09_and_two_reuse() -> None:
     assert [item.qid for item in QUESTIONS] == [
         "Q01",
         "Q02",
@@ -16,8 +16,13 @@ def test_locked_set_has_eight_questions_and_two_reuse() -> None:
         "Q06",
         "Q07",
         "Q08",
+        "Q09",
     ]
     assert by_id("q04").reuse is True
+    assert by_id("q06").reuse is True
+    assert by_id("q07").reuse is True
+    assert by_id("q08").reuse is True
+    assert by_id("q09").plant_unsupported is True
     assert sum(1 for item in QUESTIONS if item.reuse) >= 2
 
 

@@ -9,7 +9,14 @@ import sys
 from src.config import Settings, load_settings
 from src.llm import OpenRouterLLM, StructuredResult
 from src.memory import EntityMemory
-from src.models import PlannedQuery, PlannerOutput, ResearchPlan, SpecifiedQuestion
+from src.models import (
+    MemoryFact,
+    MemoryRecall,
+    PlannedQuery,
+    PlannerOutput,
+    ResearchPlan,
+    SpecifiedQuestion,
+)
 from src.period import split_entities
 from src.specify import specify_question
 from src.trace import JsonlTracer
@@ -50,6 +57,7 @@ def finalize_plan(
     rejected_notes: list[str] | None = None,
     covered_fields: list[str] | None = None,
     disputed_fields: list[str] | None = None,
+    keep_covered_queries: bool = False,
 ) -> ResearchPlan:
     """Deduplicate, drop memory-covered targets, then cap the list."""
     seen: set[str] = set()
@@ -70,6 +78,7 @@ def finalize_plan(
         covered_fields=covered_fields or [],
         disputed_fields=disputed_fields or [],
         known_facts=known_facts or [],
+        keep_covered_queries=keep_covered_queries,
     )
     if not kept:
         # Still open one verify search so Analyst is not answering from memory text.
@@ -147,19 +156,20 @@ def _split_covered_queries(
     covered_fields: list[str],
     disputed_fields: list[str],
     known_facts: list[str] | None = None,
+    keep_covered_queries: bool = False,
 ) -> tuple[list[PlannedQuery], list[PlannedQuery]]:
     skipped: list[PlannedQuery] = []
     kept: list[PlannedQuery] = []
     for item in queries:
-        if targets_are_known(
+        if keep_covered_queries or not targets_are_known(
             item.targets,
             covered_fields,
             disputed_fields,
             known_facts,
         ):
-            skipped.append(item)
-        else:
             kept.append(item)
+        else:
+            skipped.append(item)
     return skipped, kept
 
 
@@ -200,6 +210,10 @@ def _target_is_known(
         return True
     if set(key.split()) & MUST_SEARCH_WORDS:
         return False
+    if _canonical_field(key) in {"md_name", "md_date", "store_count"}:
+        target_canon = _canonical_field(key)
+        if any(_canonical_field(item) == target_canon for item in known):
+            return True
     words = {
         word
         for word in _expand_aliases(key).split()
@@ -212,6 +226,102 @@ def _target_is_known(
         if sum(1 for word in words if word in fact_key) >= 2:
             return True
     return False
+
+
+def _is_cite_field(field: str) -> bool:
+    key = _field_key(field)
+    if not key or "brand" in key or "retailer" in key:
+        return False
+    return bool(re.search(r"\b(cite|citation|cited page|source url|source page)\b", key))
+
+
+def asks_to_cite_a_page(specified: SpecifiedQuestion) -> bool:
+    """Q08-style: a citation is required, so do not skip the verify query."""
+    blob = " ".join([specified.question, *specified.notes]).casefold()
+    return bool(re.search(r"\bcite\b", blob) and re.search(r"\bpage", blob))
+
+
+def _canonical_field(field: str) -> str:
+    key = _expand_aliases(_field_key(field))
+    if any(
+        word in key
+        for word in ("predecessor", "successor", "brand", "retailer", "investor")
+    ):
+        return key
+    if "managing director" in key or key in {"md status", "md name", "full name"}:
+        return "md_name"
+    if "appointment" in key or key in {"effective date", "effective appointment date"}:
+        return "md_date"
+    if "store" in key and any(
+        word in key for word in ("count", "figure", "network", "number")
+    ):
+        return "store_count"
+    return key
+
+
+def content_required_fields(specified: SpecifiedQuestion) -> list[str]:
+    """Required fields that need a stored fact. Citation slots are not facts."""
+    return [
+        field
+        for field in specified.specification.required_fields
+        if not _is_cite_field(field)
+    ]
+
+
+def required_fields_are_known(
+    specified: SpecifiedQuestion,
+    recalled: MemoryRecall,
+) -> bool:
+    """True when every content field already has an accepted memory fact."""
+    needed = content_required_fields(specified)
+    if not needed:
+        return False
+    return all(
+        _target_is_known(
+            field,
+            recalled.known_fields,
+            recalled.disputed_fields,
+            recalled.known_facts,
+        )
+        for field in needed
+    )
+
+
+def memory_verify_urls(
+    specified: SpecifiedQuestion,
+    facts: list[MemoryFact],
+    *,
+    limit: int = 2,
+) -> list[str]:
+    """Pick 1–2 stored citation URLs for the required fields."""
+    needed = content_required_fields(specified) or list(
+        specified.specification.required_fields
+    )
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def take(url: str) -> bool:
+        cleaned = url.strip()
+        key = cleaned.casefold()
+        if not cleaned or key in seen:
+            return False
+        seen.add(key)
+        urls.append(cleaned)
+        return len(urls) >= limit
+
+    for field in needed:
+        for fact in facts:
+            if not _target_is_known(field, [fact.field], [], [fact.text]):
+                continue
+            for url in fact.urls:
+                if take(url):
+                    return urls
+    if not urls:
+        for fact in facts:
+            for url in fact.urls:
+                if take(url):
+                    return urls
+    return urls
 
 
 def plan_research(
@@ -274,6 +384,7 @@ def plan_research(
         rejected_notes=rejected,
         covered_fields=covered_fields,
         disputed_fields=disputed_fields,
+        keep_covered_queries=asks_to_cite_a_page(specified),
     )
     return StructuredResult(
         value=plan,

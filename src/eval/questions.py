@@ -1,4 +1,4 @@
-"""Locked eight-question set. Increasing difficulty, two reuse Titan/Q3."""
+"""Locked scored set (Q01–Q09). Increasing difficulty, two reuse Titan/Q3."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ class EvalQuestion:
     question: str
     notes: tuple[str, ...]
     reuse: bool = False
+    plant_unsupported: bool = False
 
 
 QUESTIONS: tuple[EvalQuestion, ...] = (
@@ -47,13 +48,13 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
     EvalQuestion(
         qid="Q04",
         question=(
-            "Given what is already known about Titan Company, whom did "
-            "Ajoy Chawla succeed as Managing Director, and when did that "
+            "Given that Ajoy Chawla is already known as Titan Company's "
+            "Managing Director, whom did he succeed, and when did that "
             "predecessor retire or step down?"
         ),
         notes=(
-            "Need the predecessor's full name and a retirement or last-day "
-            "date if a source states one.",
+            "The current MD name is already known. Need the predecessor's "
+            "full name and a retirement or last-day date if a source states one.",
         ),
         reuse=True,
     ),
@@ -72,28 +73,30 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
     EvalQuestion(
         qid="Q06",
         question=(
-            "Besides the Managing Director, who is named as CEO or head of "
-            "Titan's jewellery division in 2026, and what title does the "
-            "source give them?"
+            "Using stored Titan facts: confirm Titan Company's Managing "
+            "Director full name and the effective appointment date in 2026. "
+            "Cite one page."
         ),
         notes=(
-            "Need the person's name and title from an open page. "
-            "Do not guess from a LinkedIn URL that was not fetched.",
+            "Need the name and the date from an opened page. "
+            "Do not paste memory without a citation.",
         ),
         reuse=True,
     ),
     EvalQuestion(
         qid="Q07",
         question=(
-            "Find two published Titan or Tanishq store-network figures that "
-            "are not the same number. Give both with their dates or periods, "
-            "then choose which figure to treat as the latest and why."
+            "Titan or Tanishq already has one store-network figure on file. "
+            "Find a second published figure that is not the same number. "
+            "Give both with their dates or periods, then choose which "
+            "figure to treat as the latest and why."
         ),
         notes=(
-            "Need two different counts, each with a date or period, then "
-            "one chosen figure and a short reason (newer period or official "
-            "filing beats an undated blog).",
+            "You may reuse one stored count. Need a second different count, "
+            "dates for both, then one chosen figure and a short reason "
+            "(newer period or official filing beats an undated blog).",
         ),
+        reuse=True,
     ),
     EvalQuestion(
         qid="Q08",
@@ -109,6 +112,19 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
             "answer without opening a page.",
         ),
         reuse=True,
+    ),
+    EvalQuestion(
+        qid="Q09",
+        question=(
+            "What Tanishq store-network number is stated in the Retail4Growth "
+            "article about Ajoy Chawla becoming Titan Managing Director?"
+        ),
+        notes=(
+            "Need the store count only if that MD article itself states one. "
+            "Do not copy a store number from Wikipedia or a filing onto this "
+            "article. not_found is allowed."
+        ),
+        plant_unsupported=True,
     ),
 )
 

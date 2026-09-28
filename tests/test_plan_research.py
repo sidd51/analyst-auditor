@@ -250,6 +250,83 @@ def test_finalize_plan_skips_known_md_query_and_keeps_brand() -> None:
     ]
 
 
+def test_cite_a_page_keeps_the_known_md_query() -> None:
+    settings = valid_settings()
+    specified = titan_specified().model_copy(
+        update={
+            "question": (
+                "Is Ajoy Chawla still Titan Company's Managing Director "
+                "in 2026? Cite one page."
+            )
+        }
+    )
+    drafted = PlannerOutput(
+        queries=[
+            query("Titan Company Managing Director 2026 verify", "md status"),
+            query("Titan jewellery brand Tanishq", "jewellery brand"),
+        ]
+    )
+    plan = finalize_plan(
+        specified,
+        drafted,
+        settings,
+        known_facts=[
+            "Titan Company / full name (corroborated): Ajoy Chawla is MD."
+        ],
+        covered_fields=["full name"],
+        keep_covered_queries=True,
+    )
+    assert [item.query for item in plan.queries] == [
+        "Titan Company Managing Director 2026 verify",
+        "Titan jewellery brand Tanishq",
+    ]
+    assert plan.skipped_queries == []
+
+
+def test_required_fields_match_stored_md_aliases() -> None:
+    from src.models import MemoryFact, MemoryRecall
+    from src.plan_research import memory_verify_urls, required_fields_are_known
+
+    specified = titan_specified().model_copy(
+        update={
+            "specification": titan_specified().specification.model_copy(
+                update={
+                    "required_fields": [
+                        "managing_director_name",
+                        "effective_appointment_date",
+                        "citation",
+                    ]
+                }
+            )
+        }
+    )
+    recalled = MemoryRecall(
+        facts=[
+            MemoryFact(
+                entity="Titan Company",
+                field="full name",
+                text="Ajoy Chawla is MD.",
+                urls=["https://dess.digital/ajoy-chawla/"],
+                as_of_date="2026-09-26",
+            ),
+            MemoryFact(
+                entity="Titan Company",
+                field="effective appointment date",
+                text="1 January 2026",
+                urls=["https://economictimes.indiatimes.com/titan"],
+                as_of_date="2026-09-26",
+            ),
+        ],
+        known_facts=["Titan Company / full name: Ajoy Chawla is MD."],
+        known_fields=["full name", "effective appointment date"],
+    )
+    assert required_fields_are_known(specified, recalled) is True
+    assert memory_verify_urls(specified, recalled.facts) == [
+        "https://dess.digital/ajoy-chawla/",
+        "https://economictimes.indiatimes.com/titan",
+    ]
+
+
 def test_empty_query_list_fails_closed() -> None:
     settings = valid_settings()
     drafted = PlannerOutput.model_construct(queries=[])

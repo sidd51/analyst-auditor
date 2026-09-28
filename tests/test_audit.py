@@ -266,3 +266,61 @@ def test_finalize_rollup_rules() -> None:
     assert contradicted[0].verdict == "CONTRADICTED"
     uncited = finalize_audit([claim(urls=[])], [])
     assert uncited[0].verdict == "UNCITED"
+    silent_only = finalize_audit(
+        [claim(urls=["https://a"])],
+        [
+            AuditSourceNote(
+                claim_id="C01",
+                source_id="S01",
+                url="https://a",
+                support="silent",
+                reason="Page does not state the claim.",
+            )
+        ],
+    )
+    assert silent_only[0].verdict == "UNSUPPORTED"
+
+
+def test_planted_wrong_claim_is_unsupported(tmp_path: Path) -> None:
+    """A lie that cites a real-looking page must not pass the Auditor."""
+    from src.eval.plant_auditor import PLANTED_TEXT, PLANTED_URL, planted_claim
+
+    result, llm = run_audit(
+        tmp_path,
+        [planted_claim()],
+        AuditDraft(
+            items=[
+                AuditItemDraft(
+                    claim_id="C01",
+                    source_id="S01",
+                    support="silent",
+                    reason="The page is about an MD appointment, not Antarctica stores.",
+                )
+            ]
+        ),
+        pages((PLANTED_URL, SUPPORTING_BODY)),
+    )
+    assert result.value.verdicts[0].verdict == "UNSUPPORTED"
+    assert llm.calls == 1
+    assert PLANTED_TEXT in llm.user_prompt
+    assert "Antarctica" in llm.user_prompt
+    assert "Do not treat an analyst quote as proof" in llm.system_prompt
+
+
+def test_trap_claim_uses_opened_page_url() -> None:
+    from src.eval.plant_auditor import trap_claim_for_pages
+    from src.models import FetchedPage
+
+    page = FetchedPage(
+        url="https://example.com/md",
+        final_url="https://example.com/md",
+        ok=True,
+        kind="html",
+        extractor="trafilatura",
+        title="MD",
+        text="Ajoy Chawla is MD.",
+    )
+    trap = trap_claim_for_pages([page], claim_id="C02")
+    assert trap.claim_id == "C02"
+    assert trap.urls == ["https://example.com/md"]
+    assert "Antarctica" in trap.text

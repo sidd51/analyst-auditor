@@ -93,8 +93,31 @@ _STOP_WORDS = {
     "will",
     "with",
 }
+_COMPANY_NAME_WORDS = {
+    "company",
+    "limited",
+    "ltd",
+    "inc",
+    "corp",
+    "plc",
+    "group",
+    "holdings",
+    "industries",
+    "retail",
+    "jewellers",
+    "jewelers",
+}
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z.'-]*|\d[\d,]*(?:\.\d+)?")
 _NAME_RE = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b")
+_MONEY_RE = re.compile(
+    r"(?:"
+    r"(?:(?:us\$|usd|inr|rs\.?|\$)\s*)(\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s*(?:million|billion|crore|lakh|cr)\b)?"
+    r"|"
+    r"(\d[\d,]*(?:\.\d+)?)\s*(?:million|billion|crore|lakh)\b"
+    r")",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -103,12 +126,19 @@ class ClaimTokens:
 
     numbers: tuple[str, ...]
     name_parts: tuple[str, ...]
+    person_parts: tuple[str, ...]
     words: tuple[str, ...]
 
     def as_query(self, entity: str = "") -> str:
         parts: list[str] = []
         seen: set[str] = set()
-        for token in (entity, *self.name_parts, *self.numbers, *self.words):
+        for token in (
+            entity,
+            *self.person_parts,
+            *self.name_parts,
+            *self.numbers,
+            *self.words,
+        ):
             cleaned = " ".join(str(token).split())
             key = cleaned.casefold()
             if not cleaned or key in seen:
@@ -137,17 +167,27 @@ def claim_tokens(claims: list[AnalystClaim], entity: str = "") -> ClaimTokens:
                 words.append(token)
     names: list[str] = []
     name_seen: set[str] = set()
+    person_parts: list[str] = []
+    person_seen: set[str] = set()
     for text in texts:
         for match in _NAME_RE.finditer(text):
-            for part in match.group(1).split():
+            words_in_name = match.group(1).split()
+            company_name = any(
+                part.casefold() in _COMPANY_NAME_WORDS for part in words_in_name
+            )
+            for part in words_in_name:
                 key = part.casefold()
-                if key in name_seen:
+                if key not in name_seen:
+                    name_seen.add(key)
+                    names.append(part)
+                if company_name or key in person_seen:
                     continue
-                name_seen.add(key)
-                names.append(part)
+                person_seen.add(key)
+                person_parts.append(part)
     return ClaimTokens(
         numbers=tuple(numbers[:6]),
         name_parts=tuple(names[:6]),
+        person_parts=tuple(person_parts[:6]),
         words=tuple(words[:8]),
     )
 
@@ -160,19 +200,24 @@ def page_matches_claim_tokens(page: FetchedPage, tokens: ClaimTokens) -> bool:
         needle = letters_only(token)
         return bool(needle) and needle in haystack
 
-    name_hits = sum(1 for item in tokens.name_parts if has(item))
-    same_person = bool(tokens.name_parts) and name_hits >= min(
-        2, len(tokens.name_parts)
-    )
-    # Same person can still conflict on a date or number, so keep the page.
-    if same_person:
+    if tokens.person_parts:
+        person_hits = sum(1 for item in tokens.person_parts if has(item))
+        needed = min(2, len(tokens.person_parts))
+        if person_hits < needed:
+            return False
+        # Same person can still conflict on a date or number, so keep the page.
         return True
     if tokens.numbers:
-        if not any(has(item) for item in tokens.numbers):
-            return False
         names = {item.casefold() for item in tokens.name_parts}
         topic = [item for item in tokens.words if item.casefold() not in names]
-        return (not topic) or any(has(item) for item in topic)
+        topic_hit = (not topic) or any(has(item) for item in topic)
+        if any(has(item) for item in tokens.numbers) and topic_hit:
+            return True
+        # Same company, different money figure: still a conflict candidate.
+        page_text = f"{page.title}\n{page.text}"
+        return topic_hit and bool(_money_values(page_text))
+    hits = sum(1 for item in tokens.words if has(item))
+    return hits >= min(2, max(len(tokens.words), 1))
     hits = sum(1 for item in tokens.words if has(item))
     return hits >= min(2, max(len(tokens.words), 1))
 
@@ -282,6 +327,96 @@ def _map_support(
     )
 
 
+def _money_values(text: str) -> set[str]:
+    values: set[str] = set()
+    for match in _MONEY_RE.finditer(text or ""):
+        raw = next((group for group in match.groups() if group), "")
+        key = raw.replace(",", "")
+        if key and key != "0":
+            values.add(key)
+    return values
+
+
+def _money_quote(text: str) -> str:
+    match = _MONEY_RE.search(text or "")
+    return match.group(0).strip() if match else ""
+
+
+def _company_needles(claims: list[AnalystClaim], entity: str) -> tuple[str, ...]:
+    needles: list[str] = []
+    seen: set[str] = set()
+    for claim in claims:
+        field = claim.field.casefold()
+        if "company" not in field and "retailer" not in field:
+            continue
+        token = letters_only(claim.text)
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        needles.append(claim.text.strip())
+    if needles:
+        return tuple(needles)
+    cleaned_entity = " ".join(entity.split())
+    key = letters_only(cleaned_entity)
+    generic = key in {
+        "indian jewellery brand",
+        "indian quickcommerce company",
+        "indian jewellery retailers",
+    }
+    if cleaned_entity and key and not generic:
+        return (cleaned_entity,)
+    return ()
+
+
+def _same_company_on_page(
+    page: FetchedPage,
+    claims: list[AnalystClaim],
+    entity: str,
+) -> bool:
+    needles = _company_needles(claims, entity)
+    if not needles:
+        return False
+    haystack = letters_only(f"{page.title}\n{page.text}")
+    return any(
+        letters_only(item) in haystack
+        for item in needles
+        if len(letters_only(item)) >= 3
+    )
+
+
+def amount_conflict_verdict(
+    claim: AnalystClaim,
+    claims: list[AnalystClaim],
+    page: FetchedPage,
+    url: str,
+    origin: str,
+    entity: str,
+) -> CrossCheckVerdict | None:
+    """If the page names the same company with a different amount, it is a conflict."""
+    claim_amounts = _money_values(f"{claim.text} {claim.quote}")
+    if not claim_amounts:
+        return None
+    if not _same_company_on_page(page, claims, entity):
+        return None
+    hay = f"{page.title}\n{page.text}"
+    page_amounts = _money_values(hay)
+    if not page_amounts or claim_amounts & page_amounts:
+        return None
+    quote = _money_quote(hay)
+    if not quote or not quote_appears(quote, page.text, page.title):
+        return None
+    return CrossCheckVerdict(
+        claim_id=claim.claim_id,
+        status="conflicting",
+        independent_url=url,
+        reason=(
+            "Independent page states a different amount for the same company: "
+            f"{quote}."
+        ),
+        evidence_origin=origin,  # type: ignore[arg-type]
+    )
+
+
 def cross_check_claims(
     claims: list[AnalystClaim],
     specified: SpecifiedQuestion,
@@ -324,7 +459,7 @@ def cross_check_claims(
         if specified.specification.entities
         else ""
     )
-    tokens = claim_tokens(loners, entity)
+    tokens = claim_tokens(claims, entity)
     query = tokens.as_query(entity) or " ".join(loners[0].text.split()[:8])
     tracer.event(
         "cross_check_search",
@@ -333,6 +468,7 @@ def cross_check_claims(
         tokens={
             "numbers": list(tokens.numbers),
             "name_parts": list(tokens.name_parts),
+            "person_parts": list(tokens.person_parts),
             "words": list(tokens.words),
         },
     )
@@ -404,6 +540,17 @@ def cross_check_claims(
                 )
             )
             continue
+        forced = amount_conflict_verdict(
+            claim,
+            claims,
+            pages[0],
+            page_url,
+            origin,
+            entity,
+        )
+        if forced is not None:
+            verdicts.append(forced)
+            continue
         verdicts.append(
             _map_support(
                 claim.claim_id,
@@ -458,6 +605,20 @@ def _independent_pages(
         if pages:
             return pages, "new_search"
     return [], "none"
+
+
+def skip_independent_search(claims: list[AnalystClaim]) -> StructuredResult[CrossCheckReport]:
+    """Memory verify already reopened citations; do not pay for a second search."""
+    verdicts = [
+        CrossCheckVerdict(
+            claim_id=claim.claim_id,
+            status="single_source",
+            reason="Memory verify: reopened stored citations; no second-source search.",
+            evidence_origin="none",
+        )
+        for claim in claims
+    ]
+    return _plain_report(verdicts)
 
 
 def _plain_report(verdicts: list[CrossCheckVerdict]) -> StructuredResult[CrossCheckReport]:

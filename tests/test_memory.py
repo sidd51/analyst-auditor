@@ -121,6 +121,7 @@ def test_accepted_facts_are_recalled_for_the_same_entity(tmp_path: Path) -> None
     assert recalled.known_facts
     assert "Titan Company / full name (single_source)" in recalled.known_facts[0]
     assert "Ajoy Chawla" in recalled.known_facts[0]
+    assert recalled.facts[0].urls
     assert memory.snapshot.facts[0].quote.startswith("Ajoy Chawla has been")
 
 
@@ -134,6 +135,7 @@ def test_jewellery_question_does_not_recall_titan_facts(tmp_path: Path) -> None:
     )
     recalled = memory.recall(jewellery_specified())
     assert recalled.known_facts == []
+    assert recalled.facts == []
 
 
 def test_corroborated_tag_and_json_round_trip(tmp_path: Path) -> None:

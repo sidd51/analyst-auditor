@@ -1,4 +1,4 @@
-"""Build cost and auditor tables from committed Q1–Q8 JSONL traces."""
+"""Build cost and auditor tables from committed Q1–Q9 JSONL traces."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Run the locked Q1–Q8 set. Memory stays warm unless --fresh is set."""
+"""Run the locked Q1–Q9 set. Memory stays warm unless --fresh is set."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from src.trace import JsonlTracer
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Q1–Q8 with shared entity memory. This is a paid live run."
+        description="Run Q1–Q9 with shared entity memory. This is a paid live run."
     )
     parser.add_argument(
         "--only",
@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
                 tracer,
                 llm,
                 memory,
+                plant_unsupported=item.plant_unsupported,
             )
         except Exception as exc:
             tracer.event("run_end", ok=False, qid=item.qid, error=str(exc))

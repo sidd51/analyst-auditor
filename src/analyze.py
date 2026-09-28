@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from src.audit import audit_claims
 from src.collect_evidence import collect_evidence, collect_wave2
 from src.config import Settings, load_settings
 from src.cost import CostRecord
-from src.cross_check import cross_check_claims
+from src.cross_check import cross_check_claims, skip_independent_search
 from src.gate import close_answer, render_answer
 from src.llm import OpenRouterLLM, StructuredResult
 from src.memory import EntityMemory
@@ -30,7 +31,12 @@ from src.models import (
     SpecifiedQuestion,
     UnansweredField,
 )
-from src.plan_research import plan_research
+from src.plan_research import (
+    asks_to_cite_a_page,
+    memory_verify_urls,
+    plan_research,
+    required_fields_are_known,
+)
 from src.quotes import quote_appears
 from src.specify import specify_question
 from src.trace import JsonlTracer
@@ -76,7 +82,12 @@ def finalize_analyst(
             continue
         claims.append(kept)
 
-    unanswered = _coverage_records(packet, claims, drafted)
+    claims, extra_dropped, mismatch = drop_mismatched_chosen_reason(claims)
+    dropped += extra_dropped
+    unanswered = _merge_unanswered(
+        _coverage_records(packet, claims, drafted),
+        mismatch,
+    )
     note_limit = settings.max_analyst_notes if settings else 3
     note_chars = settings.max_analyst_note_chars if settings else 220
     notes = _trim_notes(drafted.notes, limit=note_limit, max_chars=note_chars)
@@ -116,6 +127,68 @@ def _keep_claim(
         urls=urls,
         period=(draft.period or "").strip() or None,
     )
+
+
+_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_CHOSEN_COUNT_FIELD = "chosen_figure_count"
+_CHOSEN_REASON_FIELD = "chosen_figure_reason"
+
+
+def _field_key(field: str) -> str:
+    return field.strip().casefold().replace(" ", "_")
+
+
+def _numbers_in(text: str) -> set[str]:
+    """Compare 2,000 and 2000 as the same figure."""
+    found: set[str] = set()
+    for raw in _NUMBER_RE.findall(text or ""):
+        key = raw.replace(",", "")
+        if key:
+            found.add(key)
+    return found
+
+
+def drop_mismatched_chosen_reason(
+    claims: list[AnalystClaim],
+) -> tuple[list[AnalystClaim], int, UnansweredField | None]:
+    """If count and reason both exist and their numbers disagree, drop the reason."""
+    count = next(
+        (item for item in claims if _field_key(item.field) == _CHOSEN_COUNT_FIELD),
+        None,
+    )
+    reason = next(
+        (item for item in claims if _field_key(item.field) == _CHOSEN_REASON_FIELD),
+        None,
+    )
+    if count is None or reason is None:
+        return claims, 0, None
+    count_nums = _numbers_in(count.text)
+    reason_nums = _numbers_in(reason.text)
+    if not count_nums or not reason_nums or count_nums & reason_nums:
+        return claims, 0, None
+    kept = [item for item in claims if item.claim_id != reason.claim_id]
+    return (
+        kept,
+        1,
+        UnansweredField(
+            field=reason.field,
+            reason=(
+                "chosen_figure_reason number does not match "
+                f"chosen_figure_count ({', '.join(sorted(count_nums))} vs "
+                f"{', '.join(sorted(reason_nums))})."
+            ),
+        ),
+    )
+
+
+def _merge_unanswered(
+    records: list[UnansweredField],
+    extra: UnansweredField | None,
+) -> list[UnansweredField]:
+    if extra is None:
+        return records
+    key = extra.field.casefold()
+    return [extra, *[item for item in records if item.field.casefold() != key]]
 
 
 def _trim_notes(notes: list[str], *, limit: int = 3, max_chars: int = 220) -> list[str]:
@@ -199,6 +272,8 @@ def should_fetch_wave2(
     settings: Settings,
 ) -> bool:
     """One extra wave only when a required field is open and leftovers remain."""
+    if packet.memory_verify:
+        return False
     if not packet.unused_urls or packet.next_wave_size <= 0:
         return False
     return bool(missing_required_fields(result, packet.plan.specified))
@@ -220,15 +295,19 @@ def merge_analyst_results(
         claims.append(
             claim.model_copy(update={"claim_id": f"C{len(claims) + 1:02d}"})
         )
-    unanswered = _coverage_records(
-        packet,
-        claims,
-        AnalystDraft(
-            unanswered=[
-                DraftUnanswered(field=item.field, reason=item.reason)
-                for item in (*first.unanswered, *second.unanswered)
-            ]
+    claims, extra_dropped, mismatch = drop_mismatched_chosen_reason(claims)
+    unanswered = _merge_unanswered(
+        _coverage_records(
+            packet,
+            claims,
+            AnalystDraft(
+                unanswered=[
+                    DraftUnanswered(field=item.field, reason=item.reason)
+                    for item in (*first.unanswered, *second.unanswered)
+                ]
+            ),
         ),
+        mismatch,
     )
     notes = _trim_notes(
         [*first.notes, *second.notes],
@@ -239,7 +318,7 @@ def merge_analyst_results(
         claims=claims,
         unanswered=unanswered,
         notes=notes,
-        dropped_drafts=first.dropped_drafts + second.dropped_drafts,
+        dropped_drafts=first.dropped_drafts + second.dropped_drafts + extra_dropped,
     )
 
 
@@ -330,6 +409,8 @@ def run_question(
     tracer: JsonlTracer,
     llm: OpenRouterLLM,
     memory: EntityMemory,
+    *,
+    plant_unsupported: bool = False,
 ) -> QuestionRun:
     """Specify → plan → collect → analyze → optional wave 2 → check → audit → gate."""
     started = time.perf_counter()
@@ -338,17 +419,53 @@ def run_question(
         specified.value,
         limit=settings.max_memory_prompt_items,
     )
-    planned = plan_research(
-        specified.value,
-        settings,
-        llm,
-        known_facts=recalled.known_facts,
-        disputed_notes=recalled.disputed_notes,
-        rejected_notes=recalled.rejected_notes,
-        covered_fields=recalled.known_fields,
-        disputed_fields=recalled.disputed_fields,
+    stored_urls = memory_verify_urls(specified.value, recalled.facts)
+    memory_verify = bool(
+        required_fields_are_known(specified.value, recalled) and stored_urls
     )
-    packet = collect_evidence(planned.value, settings, tracer)
+    tracer.event(
+        "memory_recall",
+        known_fields=recalled.known_fields,
+        stored_urls=stored_urls,
+        memory_verify=memory_verify,
+        cite_a_page=asks_to_cite_a_page(specified.value),
+    )
+    if memory_verify:
+        planned = StructuredResult(
+            value=ResearchPlan(
+                specified=specified.value,
+                queries=[],
+                known_facts=recalled.known_facts,
+                disputed_notes=recalled.disputed_notes,
+                rejected_notes=recalled.rejected_notes,
+            ),
+            cost=CostRecord(0, 0, 0, 0.0, 0.0),
+            generation_id="",
+        )
+        packet = collect_evidence(
+            planned.value,
+            settings,
+            tracer,
+            priority_urls=stored_urls,
+            memory_verify=True,
+        )
+    else:
+        planned = plan_research(
+            specified.value,
+            settings,
+            llm,
+            known_facts=recalled.known_facts,
+            disputed_notes=recalled.disputed_notes,
+            rejected_notes=recalled.rejected_notes,
+            covered_fields=recalled.known_fields,
+            disputed_fields=recalled.disputed_fields,
+        )
+        packet = collect_evidence(
+            planned.value,
+            settings,
+            tracer,
+            priority_urls=stored_urls,
+        )
     analyzed = analyze_evidence(packet, settings, llm)
     if should_fetch_wave2(packet, analyzed.value, settings):
         gaps = missing_required_fields(analyzed.value, specified.value)
@@ -382,14 +499,42 @@ def run_question(
             claims=len(analyzed.value.claims),
             unanswered=[item.field for item in analyzed.value.unanswered],
         )
-    checked = cross_check_claims(
-        analyzed.value.claims,
-        specified.value,
-        settings,
-        tracer,
-        llm=llm,
-        known_pages=packet.fetched.pages,
-    )
+    if plant_unsupported:
+        from src.eval.plant_auditor import trap_claim_for_pages
+
+        trap = trap_claim_for_pages(
+            packet.fetched.pages,
+            claim_id=f"C{len(analyzed.value.claims) + 1:02d}",
+        )
+        tracer.event(
+            "planted_claim",
+            claim_id=trap.claim_id,
+            text=trap.text,
+            urls=list(trap.urls),
+        )
+        analyzed = StructuredResult(
+            value=analyzed.value.model_copy(
+                update={"claims": [*analyzed.value.claims, trap]}
+            ),
+            cost=analyzed.cost,
+            generation_id=analyzed.generation_id,
+        )
+    if packet.memory_verify:
+        checked = skip_independent_search(analyzed.value.claims)
+        tracer.event(
+            "cross_check_report",
+            verdicts=[item.model_dump() for item in checked.value.verdicts],
+            skipped=True,
+        )
+    else:
+        checked = cross_check_claims(
+            analyzed.value.claims,
+            specified.value,
+            settings,
+            tracer,
+            llm=llm,
+            known_pages=packet.fetched.pages,
+        )
     audited = audit_claims(
         analyzed.value.claims,
         specified.value,
@@ -504,6 +649,8 @@ def _print_run(run: QuestionRun, memory: EntityMemory, trace_path) -> None:
         f"Unused leftovers: {len(packet.unused_urls)} | "
         f"Next wave: {packet.next_wave_size}"
     )
+    if packet.memory_verify:
+        print("Memory verify: reopened stored URLs; skipped plan, search, and wave 2.")
     if run.planned.skipped_queries:
         print(f"Skipped memory-covered queries: {len(run.planned.skipped_queries)}")
         for item in run.planned.skipped_queries:

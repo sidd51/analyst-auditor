@@ -6,6 +6,7 @@ import httpx
 
 from src.cost import CostRecord
 from src.cross_check import (
+    amount_conflict_verdict,
     claim_domains,
     claim_tokens,
     cross_check_claims,
@@ -355,3 +356,125 @@ def test_cross_check_query_uses_tokens_not_the_full_sentence(tmp_path: Path) -> 
     assert "is MD from" not in query
     assert "Ajoy" in query
     assert "2026" in query
+
+
+def test_scanx_page_without_person_name_is_rejected() -> None:
+    tokens = claim_tokens(
+        [
+            AnalystClaim(
+                claim_id="C01",
+                field="managing_director_name",
+                text="Ajoy Chawla",
+                quote="Ajoy Chawla",
+                passage_ids=["P0001"],
+                urls=[
+                    "https://dess.digital/a",
+                    "https://www.retail4growth.com/b",
+                ],
+            ),
+            AnalystClaim(
+                claim_id="C02",
+                field="effective_appointment_date",
+                text="January 1, 2026",
+                quote="effective January 1, 2026",
+                passage_ids=["P0001"],
+                urls=["https://dess.digital/a"],
+                period="2026",
+            ),
+        ],
+        "Titan Company",
+    )
+    junk = page(
+        "https://scanx.trade/stock-market-news/stocks/titan-january-2026/1",
+        "Titan Company Ltd has achieved fresh record highs in January 2026 "
+        "after breaking out from a multi-year rounding bottom.",
+        title="Titan Company Hits Fresh Record Highs in January 2026",
+    )
+    good = page(
+        "https://news.example/md",
+        "Ajoy Chawla takes charge as Managing Director of Titan Company "
+        "from January 1, 2026 after board approval. " * 4,
+        title="Ajoy Chawla named Titan MD",
+    )
+    assert "Ajoy" in tokens.person_parts
+    assert page_matches_claim_tokens(junk, tokens) is False
+    assert page_matches_claim_tokens(good, tokens) is True
+
+
+def test_python_forces_amount_conflict_when_llm_says_no(tmp_path: Path) -> None:
+    settings = valid_settings()
+    tracer = JsonlTracer(tmp_path / "x.jsonl", reset=True)
+    llm = FakeLLM(
+        CrossCheckDraft(
+            items=[
+                CrossCheckItemDraft(
+                    claim_id="C01",
+                    support="yes",
+                    reason="The passage names ONYA.",
+                ),
+                CrossCheckItemDraft(
+                    claim_id="C02",
+                    support="no",
+                    reason="The passage states Rs 12.5 crore, not US$ 0.65 million.",
+                ),
+            ]
+        )
+    )
+    claims = [
+        AnalystClaim(
+            claim_id="C01",
+            field="company_name",
+            text="ONYA",
+            quote="ONYA",
+            passage_ids=["P0001"],
+            urls=["https://www.ibef.org/onya"],
+        ),
+        AnalystClaim(
+            claim_id="C02",
+            field="amount",
+            text="US$ 0.65 million",
+            quote="US$ 0.65 million",
+            passage_ids=["P0001"],
+            urls=["https://www.ibef.org/onya"],
+        ),
+    ]
+    body = (
+        "Lab-grown diamond jewellery startup ONYA has raised Rs 12.5 crore "
+        "in pre-Series A funding round led by Divisa Family Office. "
+    ) * 4
+    result = cross_check_claims(
+        claims,
+        titan_specified(),
+        settings,
+        tracer,
+        llm=llm,  # type: ignore[arg-type]
+        searcher=ScriptedSearch(
+            [
+                SearchHit(
+                    title="ONYA raises",
+                    url="https://entrackr.com/onya-round",
+                    snippet="",
+                    provider="tavily",
+                    query="q",
+                )
+            ]
+        ),  # type: ignore[arg-type]
+        fetcher=ParallelFetcher(
+            settings,
+            tracer,
+            http_get=lambda url, **_: html(url, body, title="ONYA raises"),
+        ),
+    )
+    by_id = {item.claim_id: item for item in result.value.verdicts}
+    assert by_id["C02"].status == "conflicting"
+    assert "12.5" in by_id["C02"].reason
+    forced = amount_conflict_verdict(
+        claims[1],
+        claims,
+        page("https://entrackr.com/onya-round", body, title="ONYA raises"),
+        "https://entrackr.com/onya-round",
+        "new_search",
+        "Titan Company",
+    )
+    assert forced is not None
+    assert forced.status == "conflicting"

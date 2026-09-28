@@ -2,6 +2,7 @@
 
 from src.analyze import (
     analyze_evidence,
+    drop_mismatched_chosen_reason,
     finalize_analyst,
     merge_analyst_results,
     missing_required_fields,
@@ -271,6 +272,15 @@ def test_wave2_runs_only_for_open_required_fields_with_leftovers() -> None:
     assert should_fetch_wave2(ready, first, valid_settings()) is False
 
 
+def test_wave2_is_skipped_on_memory_verify() -> None:
+    first = finalize_analyst(packet(), AnalystDraft(claims=[]))
+    ready = packet()
+    ready.unused_urls = ["https://example.com/extra"]
+    ready.next_wave_size = 4
+    ready.memory_verify = True
+    assert should_fetch_wave2(ready, first, valid_settings()) is False
+
+
 def test_merge_appends_new_claims_and_drops_covered_gaps() -> None:
     first = AnalystResult(
         claims=[
@@ -305,3 +315,59 @@ def test_merge_appends_new_claims_and_drops_covered_gaps() -> None:
     assert not any(
         item.field == "effective appointment date" for item in merged.unanswered
     )
+
+
+def test_mismatched_chosen_reason_is_unanswered_without_llm() -> None:
+    result = finalize_analyst(
+        packet(),
+        AnalystDraft(
+            claims=[
+                DraftClaim(
+                    field="chosen_figure_count",
+                    text="over 2,000 retail stores",
+                    quote="Titan added only 19 new jewellery retail locations in Q1 FY26",
+                    passage_ids=["P0006"],
+                ),
+                DraftClaim(
+                    field="chosen_figure_reason",
+                    text="528 is the latest dated store-network figure.",
+                    quote="Titan added only 19 new jewellery retail locations in Q1 FY26",
+                    passage_ids=["P0006"],
+                ),
+            ]
+        ),
+    )
+    fields = [item.field for item in result.claims]
+    assert "chosen_figure_count" in fields
+    assert "chosen_figure_reason" not in fields
+    assert result.dropped_drafts == 1
+    gap = next(
+        item for item in result.unanswered if item.field == "chosen_figure_reason"
+    )
+    assert "does not match" in gap.reason
+
+
+def test_chosen_reason_is_kept_when_it_repeats_the_count() -> None:
+    claims, dropped, mismatch = drop_mismatched_chosen_reason(
+        [
+            AnalystClaim(
+                claim_id="C01",
+                field="chosen_figure_count",
+                text="over 2,000 retail stores",
+                quote="over 2,000 retail stores",
+                passage_ids=["P0001"],
+                urls=["https://example.com/a"],
+            ),
+            AnalystClaim(
+                claim_id="C02",
+                field="chosen_figure_reason",
+                text="2,000 is later than the 528 scrape figure.",
+                quote="2,000 is later than the 528 scrape figure.",
+                passage_ids=["P0001"],
+                urls=["https://example.com/a"],
+            ),
+        ]
+    )
+    assert dropped == 0
+    assert mismatch is None
+    assert [item.claim_id for item in claims] == ["C01", "C02"]

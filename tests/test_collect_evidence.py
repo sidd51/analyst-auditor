@@ -187,3 +187,39 @@ def test_wave2_fetches_leftover_urls_without_searching(tmp_path: Path) -> None:
     assert leftovers[0] in fetched_urls
     assert second.unused_urls == []
     assert any("Venkataraman" in item.text for item in second.retrieval.passages)
+
+
+def test_memory_verify_reopens_two_stored_urls_without_search(tmp_path: Path) -> None:
+    settings = valid_settings()
+    tracer = JsonlTracer(tmp_path / "verify.jsonl", reset=True)
+    plan = ResearchPlan(specified=titan_specified(), queries=[])
+    searcher = ScriptedSearch({})
+    fetched: list[str] = []
+
+    def http_get(url: str, **_: object):
+        fetched.append(url)
+        return html_response(url, "Ajoy Chawla is Managing Director from January 2026.")
+
+    packet = collect_evidence(
+        plan,
+        settings,
+        tracer,
+        searcher=searcher,  # type: ignore[arg-type]
+        fetcher=ParallelFetcher(settings, tracer, http_get=http_get),
+        retriever=PassageRetriever(settings, tracer),
+        priority_urls=[
+            "https://dess.digital/ajoy-chawla/",
+            "https://economictimes.indiatimes.com/titan",
+            "https://example.com/third",
+        ],
+        memory_verify=True,
+    )
+    assert searcher.queries == []
+    assert fetched == [
+        "https://dess.digital/ajoy-chawla/",
+        "https://economictimes.indiatimes.com/titan",
+    ]
+    assert packet.pages_used == 2
+    assert packet.next_wave_size == 0
+    assert packet.unused_urls == []
+    assert packet.memory_verify is True
