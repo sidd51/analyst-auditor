@@ -1,7 +1,7 @@
 # Analyst&Auditor
 ### Evidence-gated web research agent
 Analyst- An agent that answers open research questions requiring evidence gathered from the live web.
-Auditor- A second agent that takes an analyst answer and independently verifies
+Auditor- A second agent that takes an analyst answer and independently verifies.
 
 ## Features
 
@@ -28,11 +28,12 @@ Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eva
 Q06 reopens 1–2 stored MD citation URLs.
 
 
-|             | Naive Q01 (no tools)        | Loop Q01                |
+|             | Naive Q01 [no tools]        | Loop Q01                |
 | ----------- | --------------------------- | ----------------------- |
 | Answer      | C.K. Venkataraman, Oct 2020 | Ajoy Chawla, 1 Jan 2026 |
 | Cost / time | ₹0.02 / 3s                  | ₹0.35 / 26s             |
 
+The additional cost buys a research/verification capability that the naive approach lacks.
 
 
 | Q   | complete | tokens | ₹    | sec    | memory facts | SUPPORTED | UNSUPPORTED | missing |
