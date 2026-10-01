@@ -13,7 +13,8 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 - Bounded fetch: 5 pages, then +4 if fields are still missing, never more than 15.
 - Scored eval: nine live questions, naive baseline, cost and auditor tables from traces.
 
-**Live Evaluation screen (open this):** [sidd51.github.io/analyst-auditor](https://sidd51.github.io/analyst-auditor/)
+**Live Evaluation screen :** [sidd51.github.io/analyst-auditor](https://sidd51.github.io/analyst-auditor/)
+
 That page is static HTML generated from the traces. Rebuild with `python -m src.eval.report`.
 
 ## Results (live eval, shared memory)
