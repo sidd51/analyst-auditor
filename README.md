@@ -21,6 +21,14 @@ That page is static HTML generated from the traces. Rebuild with `python -m src.
 Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eval.report`.
 
 
+|             | Naive Q01 [no tools]        | Loop Q01                |
+| ----------- | --------------------------- | ----------------------- |
+| Answer      | C.K. Venkataraman, Oct 2020 | Ajoy Chawla, 1 Jan 2026 |
+| Cost / time | ₹0.02 / 3s                  | ₹0.35 / 26s             |
+
+The additional cost buys a research/verification capability that the naive approach lacks.
+
+
 |        | Cold Q01 | Memory-verify Q06 |
 | ------ | -------- | ----------------- |
 | Tokens | 5,173    | 3,051             |
@@ -28,14 +36,6 @@ Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eva
 | Cost   | ₹0.35    | ₹0.20             |
 
 Q06 reopens 1–2 stored MD citation URLs.
-
-
-|             | Naive Q01 [no tools]        | Loop Q01                |
-| ----------- | --------------------------- | ----------------------- |
-| Answer      | C.K. Venkataraman, Oct 2020 | Ajoy Chawla, 1 Jan 2026 |
-| Cost / time | ₹0.02 / 3s                  | ₹0.35 / 26s             |
-
-The additional cost buys a research/verification capability that the naive approach lacks.
 
 
 | Q   | complete | tokens | ₹    | sec    | memory facts | SUPPORTED | UNSUPPORTED | missing |
