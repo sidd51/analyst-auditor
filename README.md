@@ -8,7 +8,7 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 - Quote-lock: a claim is kept only if its quote appears on the fetched page.
 - Independent auditor: cited URLs are refetched and judged `SUPPORTED`, `UNSUPPORTED`, `CONTRADICTED`, or `UNCITED`.
 - Python gate: completeness is a required-field check. The model does not write the final answer.
-- Entity memory: accepted facts only. If every required field is already known, reopen 1–2 stored URLs and skip a full search.
+- Entity memory: Auditor supported facts only. If every required field is already known, reopen 1–2 stored URLs and skip a full search.
 - Cite-a-page: that verify query is not dropped just because the fact is already in memory.
 - Bounded fetch: 5 pages, then +4 if fields are still missing, never more than 15.
 - Scored eval: nine live questions, naive baseline, cost and auditor tables from traces.
@@ -49,6 +49,8 @@ The additional cost buys a research/verification capability that the naive appro
 
 
 Full columns: `[reports/cost.md](reports/cost.md)`, `[reports/auditor.md](reports/auditor.md)`. Decisions and failures: `[WRITEUP.md](WRITEUP.md)`.
+
+Evaluation screen: [`ui/eval.html`](ui/eval.html) (rebuild with `python -m src.eval.report`).
 
 
 ### Architecture

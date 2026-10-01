@@ -47,7 +47,10 @@ def test_report_writer_fills_tables_from_traces(tmp_path: Path) -> None:
     write_reports(tmp_path)
     cost = (tmp_path / "reports" / "cost.md").read_text(encoding="utf-8")
     auditor = (tmp_path / "reports" / "auditor.md").read_text(encoding="utf-8")
+    page = (tmp_path / "ui" / "eval.html").read_text(encoding="utf-8")
     assert "| Q01 |" in cost
     assert "1.5000" in cost
     assert "| Q02 | — |" in cost
     assert "| Q01 | 1 | 1 | 0 | 0 | 0 | 0 |" in auditor
+    assert "Q01" in page
+    assert "const DATA =" in page

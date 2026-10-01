@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Evaluation · Analyst + Auditor</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --ink: #1a2332;
+      --muted: #5c6b7e;
+      --line: #dce3ee;
+      --tokens: #5b4fd6;
+      --cost: #0f9d7a;
+      --time: #c47a08;
+      --ok: #146c43;
+      --warn: #8a5a00;
+      --bad: #b42318;
+      --info: #1d4f91;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 14px/1.45 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    header, main { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    header { padding-top: 28px; padding-bottom: 8px; }
+    .kicker {
+      margin: 0 0 6px;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h1 { margin: 0 0 6px; font-size: 26px; font-weight: 650; }
+    .sub { margin: 0; color: var(--muted); }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 20px 0 22px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+    }
+    .metric.tokens::before { background: var(--tokens); }
+    .metric.cost::before { background: var(--cost); }
+    .metric.time::before { background: var(--time); }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { font-size: 32px; font-weight: 700; margin: 4px 0 2px; letter-spacing: -0.03em; }
+    .metric.tokens .value { color: var(--tokens); }
+    .metric.cost .value { color: var(--cost); }
+    .metric.time .value { color: var(--time); }
+    .metric .note { color: var(--muted); font-size: 12px; }
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; white-space: nowrap; }
+    th:nth-child(2), td:nth-child(2) { white-space: normal; }
+    th {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      font-weight: 600;
+    }
+    td { border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f0f4fa; }
+    tbody tr.active { background: #e8eef8; }
+    .qid { font-weight: 700; }
+    .qtext {
+      color: var(--muted);
+      max-width: 240px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: normal;
+    }
+    .num { font-variant-numeric: tabular-nums; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pill.ok { background: #e7f7ee; color: var(--ok); }
+    .pill.warn { background: #fff4dc; color: var(--warn); }
+    .pill.bad { background: #fde8eb; color: var(--bad); }
+    .pill.muted { background: #eef2f7; color: var(--muted); }
+    .drawer {
+      display: none;
+      margin-top: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 16px 8px;
+    }
+    .drawer.open { display: block; }
+    .drawer-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .drawer-head h2 { margin: 0; font-size: 18px; }
+    .drawer-head p { margin: 4px 0 0; color: var(--muted); }
+    .close {
+      background: #f4f6fb;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .ladder {
+      position: relative;
+      padding-left: 28px;
+    }
+    .ladder::before {
+      content: "";
+      position: absolute;
+      left: 11px;
+      top: 10px;
+      bottom: 18px;
+      width: 2px;
+      background: #d5dde8;
+    }
+    .rung {
+      position: relative;
+      margin-bottom: 22px;
+    }
+    .rung::before {
+      content: "";
+      position: absolute;
+      left: -23px;
+      top: 5px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid #8b98ab;
+    }
+    .rung h3 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .card {
+      border-radius: 12px;
+      padding: 12px 13px;
+      border: 1px solid transparent;
+    }
+    .card .k {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      opacity: 0.8;
+    }
+    .card .t { font-weight: 650; }
+    .card .m { margin-top: 8px; font-size: 12px; opacity: 0.9; word-break: break-word; }
+    .card.ok {
+      background: #e7f7ee;
+      border-color: #b7e4c7;
+      color: var(--ok);
+    }
+    .card.warn {
+      background: #fff4dc;
+      border-color: #f0d08a;
+      color: var(--warn);
+    }
+    .card.bad {
+      background: #fde8eb;
+      border-color: #f3b4bc;
+      color: var(--bad);
+    }
+    .card.info {
+      background: #eaf2ff;
+      border-color: #bfd4f6;
+      color: var(--info);
+    }
+    .empty { color: var(--muted); margin: 0; padding: 4px 0 2px; }
+    @media (max-width: 720px) {
+      .metrics { grid-template-columns: 1fr; }
+      header, main { padding-left: 16px; padding-right: 16px; }
+      th:nth-child(8), td:nth-child(8) { display: none; }
+      .qtext { max-width: 140px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="kicker">Analyst + Auditor</p>
+    <h1>Evaluation</h1>
+    <p class="sub">Cold Q01 versus memory-verify Q06. Click a question for its pipeline.</p>
+  </header>
+  <main>
+    <section class="metrics" id="metrics"></section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Q</th>
+            <th>Question</th>
+            <th>Status</th>
+            <th>Memory</th>
+            <th>Tokens</th>
+            <th>Time</th>
+            <th>Cost</th>
+            <th>Auditor</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <section class="drawer" id="drawer"></section>
+  </main>
+  <script>
+    const DATA = /*__EVAL_DATA__*/;
+    const m = DATA.metrics || {};
+
+    function fmt(n) { return Number(n || 0).toLocaleString("en-IN"); }
+    function rupee(n) { return "₹" + Number(n || 0).toFixed(2); }
+    function sec(n) { return Number(n || 0).toFixed(1) + "s"; }
+    function drop(pct) { return pct == null ? "—" : "−" + pct + "%"; }
+    function esc(v) {
+      return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function pretty(s) { return String(s || "").replace(/_/g, " "); }
+    function memoryUsed(row) {
+      const t = row.trace || {};
+      return Boolean(row.recalled || row.skipped_queries || t.memory_verify);
+    }
+
+    document.getElementById("metrics").innerHTML = [
+      metric("tokens", "Tokens", drop(m.token_drop_pct), fmt(m.q01_tokens) + " → " + fmt(m.q06_tokens)),
+      metric("cost", "Cost", drop(m.cost_drop_pct), rupee(m.q01_cost_inr) + " → " + rupee(m.q06_cost_inr)),
+      metric("time", "Time", drop(m.time_drop_pct), sec(m.q01_seconds) + " → " + sec(m.q06_seconds)),
+    ].join("");
+
+    function metric(kind, label, value, note) {
+      return '<article class="metric ' + kind + '"><div class="label">' + label +
+        '</div><div class="value">' + esc(value) + '</div><div class="note">' + esc(note) + "</div></article>";
+    }
+
+    const tbody = document.getElementById("rows");
+    DATA.questions.forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.id = row.qid.toLowerCase();
+      tr.tabIndex = 0;
+      tr.setAttribute("role", "button");
+      const status = !row.present ? pill("warn", "missing")
+        : row.complete ? pill("ok", "complete")
+        : pill("warn", "incomplete");
+      const memory = memoryUsed(row) ? pill("ok", "used") : pill("muted", "—");
+      const auditor = row.unsupported ? pill("bad", row.unsupported + " UNSUPPORTED")
+        : row.supported ? pill("ok", row.supported + " SUPPORTED")
+        : pill("muted", "—");
+      tr.innerHTML =
+        '<td class="qid">' + esc(row.qid) + "</td>" +
+        '<td><span class="qtext" title="' + esc(row.question) + '">' + esc(row.question) + "</span></td>" +
+        "<td>" + status + "</td>" +
+        "<td>" + memory + "</td>" +
+        '<td class="num">' + (row.present ? fmt(row.tokens) : "—") + "</td>" +
+        '<td class="num">' + (row.present ? sec(row.wall_seconds) : "—") + "</td>" +
+        '<td class="num">' + (row.present ? rupee(row.cost_inr) : "—") + "</td>" +
+        "<td>" + auditor + "</td>";
+      tr.addEventListener("click", () => openRow(row, tr));
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRow(row, tr); }
+      });
+      tbody.appendChild(tr);
+    });
+
+    function pill(kind, text) {
+      return '<span class="pill ' + kind + '">' + esc(text) + "</span>";
+    }
+
+    function openRow(row, tr) {
+      document.querySelectorAll("tbody tr").forEach((el) => el.classList.remove("active"));
+      tr.classList.add("active");
+      const el = document.getElementById("drawer");
+      el.classList.add("open");
+      el.innerHTML =
+        '<div class="drawer-head"><div><h2>' + esc(row.qid) + "</h2><p>" + esc(row.question) +
+        "</p></div><button class=\"close\" id=\"closeDrawer\">Close</button></div>" +
+        '<div class="ladder">' +
+          rung("Specify", specifyCards(row)) +
+          rung("Memory", memoryCards(row)) +
+          rung("Search", searchCards(row)) +
+          rung("Pages", pagesCards(row)) +
+          rung("Analyst", analystCards(row)) +
+          rung("Auditor", auditorCards(row)) +
+          rung("Final Gate", gateCards(row)) +
+        "</div>";
+      document.getElementById("closeDrawer").addEventListener("click", () => {
+        document.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("active"));
+        el.classList.remove("open");
+        el.innerHTML = "";
+      });
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function rung(title, html) {
+      return '<section class="rung"><h3>' + esc(title) + "</h3>" + html + "</section>";
+    }
+
+    function specifyCards(row) {
+      const t = row.trace || {};
+      return grid([
+        ...((t.entities || []).map((x) => card("info", "Entity", x, ""))),
+        ...((t.required_fields || []).map((x) => card("info", "Field", x, ""))),
+      ], "No specification in this trace.");
+    }
+    function memoryCards(row) {
+      const t = row.trace || {};
+      return grid([
+        card(t.memory_verify ? "ok" : (memoryUsed(row) ? "ok" : "warn"), "Path",
+          t.memory_verify ? "Memory verify" : (memoryUsed(row) ? "Recalled, then searched" : "Full search"),
+          t.memory_verify
+            ? "Reopened stored URLs. No plan, search, or wave 2."
+            : (memoryUsed(row) ? (row.recalled || 0) + " recalled · " + (row.skipped_queries || 0) + " queries skipped" : "Required fields were not all known.")),
+        ...(t.known_fields || []).slice(0, 6).map((x) => card("ok", "Known field", x, "")),
+        ...(t.stored_urls || []).map((u) => card("info", "Stored URL", host(u), u)),
+      ], "No memory event.");
+    }
+    function searchCards(row) {
+      const t = row.trace || {};
+      return grid((t.queries || []).map((q) => card("info", (q.targets || []).join(", ") || "Query", q.query, "")), "No live search (memory verify).");
+    }
+    function pagesCards(row) {
+      const t = row.trace || {};
+      const extra = (t.pages_used != null)
+        ? [card("info", "Budget", t.pages_used + " pages", (t.passages_selected || 0) + " passages")]
+        : [];
+      const fetches = (t.fetches || []).map((f) => card(f.ok ? "ok" : "bad", f.ok ? "Fetched" : "Failed", f.title || host(f.url), f.url));
+      return grid(extra.concat(fetches), "No pages fetched.");
+    }
+    function analystCards(row) {
+      const t = row.trace || {};
+      const cards = (t.claims || []).map((c) => card("info", c.claim_id + " · " + c.field, c.text, ""));
+      (t.unanswered || []).forEach((u) => cards.push(card("warn", "Unanswered", u.field, u.reason)));
+      if (t.planted) cards.push(card("bad", "Planted " + t.planted.claim_id, t.planted.text, "False claim injected for the auditor."));
+      return grid(cards, "No analyst claims.");
+    }
+    function auditorCards(row) {
+      const t = row.trace || {};
+      return grid((t.auditor || []).map((a) => {
+        const kind = a.verdict === "SUPPORTED" ? "ok" : a.verdict === "UNSUPPORTED" ? "bad" : "warn";
+        return card(kind, a.claim_id + " · " + a.verdict, a.reason || a.verdict, "");
+      }), "No auditor verdicts.");
+    }
+    function gateCards(row) {
+      const t = row.trace || {};
+      const cards = (t.accepted || []).map((a) => card("ok", a.field, a.text, (a.sources || []).join(" · ")));
+      (t.missing || []).forEach((miss) => cards.push(card("warn", "Missing · " + miss.field, miss.reason || "unanswered", "")));
+      if (row.qid === "Q01" && DATA.naive && DATA.naive.answer) {
+        cards.push(card("warn", "Naive one-shot", DATA.naive.answer, rupee(DATA.naive.cost_inr) + " · " + sec(DATA.naive.wall_seconds)));
+      }
+      return grid(cards, "Gate kept nothing.");
+    }
+
+    function grid(cards, empty) {
+      if (!cards || !cards.length) return '<p class="empty">' + esc(empty || "Nothing here.") + "</p>";
+      return '<div class="cards">' + cards.join("") + "</div>";
+    }
+    function card(cls, k, t, more) {
+      return '<article class="card ' + cls + '"><div class="k">' + esc(pretty(k)) + '</div><div class="t">' +
+        esc(t) + "</div>" + (more ? '<div class="m">' + esc(more) + "</div>" : "") + "</article>";
+    }
+    function host(url) {
+      try { return new URL(url).host; } catch (e) { return url; }
+    }
+  </script>
+</body>
+</html>
