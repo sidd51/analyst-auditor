@@ -54,3 +54,4 @@ def test_report_writer_fills_tables_from_traces(tmp_path: Path) -> None:
     assert "| Q01 | 1 | 1 | 0 | 0 | 0 | 0 |" in auditor
     assert "Q01" in page
     assert "const DATA =" in page
+    assert "Cross Check" in page

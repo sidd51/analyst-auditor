@@ -323,6 +323,7 @@
           rung("Search", searchCards(row)) +
           rung("Pages", pagesCards(row)) +
           rung("Analyst", analystCards(row)) +
+          rung("Cross Check", crossCheckCards(row)) +
           rung("Auditor", auditorCards(row)) +
           rung("Final Gate", gateCards(row)) +
         "</div>";
@@ -375,6 +376,23 @@
       (t.unanswered || []).forEach((u) => cards.push(card("warn", "Unanswered", u.field, u.reason)));
       if (t.planted) cards.push(card("bad", "Planted " + t.planted.claim_id, t.planted.text, "False claim injected for the auditor."));
       return grid(cards, "No analyst claims.");
+    }
+    function crossCheckCards(row) {
+      const t = row.trace || {};
+      const cards = [];
+      if (t.cross_check_skipped) {
+        cards.push(card("warn", "Path", "Skipped independent search", "Memory verify: no second-source search."));
+      }
+      (t.cross_check || []).forEach((v) => {
+        const kind = v.status === "corroborated" ? "ok"
+          : v.status === "conflicting" ? "bad"
+          : v.status === "skipped_multi_source" ? "info"
+          : "warn";
+        const more = [host(v.independent_url), v.evidence_origin && v.evidence_origin !== "none" ? v.evidence_origin : ""]
+          .filter(Boolean).join(" · ");
+        cards.push(card(kind, v.claim_id + " · " + v.status, v.reason || v.status, more));
+      });
+      return grid(cards, "No cross-check in this trace.");
     }
     function auditorCards(row) {
       const t = row.trace || {};

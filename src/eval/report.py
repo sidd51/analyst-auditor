@@ -143,6 +143,17 @@ def compact_trace(events: list[dict]) -> dict:
             if planted
             else None
         ),
+        "cross_check_skipped": bool(cross.get("skipped")),
+        "cross_check": [
+            {
+                "claim_id": item.get("claim_id") or "",
+                "status": item.get("status") or "",
+                "reason": (item.get("reason") or "")[:220],
+                "independent_url": item.get("independent_url") or "",
+                "evidence_origin": item.get("evidence_origin") or "",
+            }
+            for item in (cross.get("verdicts") or [])[:6]
+        ],
         "auditor": [
             {
                 "claim_id": item.get("claim_id") or "",
