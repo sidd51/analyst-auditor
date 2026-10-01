@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Evaluation · Analyst + Auditor</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --ink: #1a2332;
+      --muted: #5c6b7e;
+      --line: #dce3ee;
+      --tokens: #5b4fd6;
+      --cost: #0f9d7a;
+      --time: #c47a08;
+      --ok: #146c43;
+      --warn: #8a5a00;
+      --bad: #b42318;
+      --info: #1d4f91;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 14px/1.45 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    header, main { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    header { padding-top: 28px; padding-bottom: 8px; }
+    .kicker {
+      margin: 0 0 6px;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h1 { margin: 0 0 6px; font-size: 26px; font-weight: 650; }
+    .sub { margin: 0; color: var(--muted); }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 20px 0 22px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+    }
+    .metric.tokens::before { background: var(--tokens); }
+    .metric.cost::before { background: var(--cost); }
+    .metric.time::before { background: var(--time); }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { font-size: 32px; font-weight: 700; margin: 4px 0 2px; letter-spacing: -0.03em; }
+    .metric.tokens .value { color: var(--tokens); }
+    .metric.cost .value { color: var(--cost); }
+    .metric.time .value { color: var(--time); }
+    .metric .note { color: var(--muted); font-size: 12px; }
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: auto;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: left; white-space: nowrap; }
+    th:nth-child(2), td:nth-child(2) { white-space: normal; }
+    th {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      font-weight: 600;
+    }
+    td { border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f0f4fa; }
+    tbody tr.active { background: #e8eef8; }
+    .qid { font-weight: 700; }
+    .qtext {
+      color: var(--muted);
+      max-width: 240px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: normal;
+    }
+    .num { font-variant-numeric: tabular-nums; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pill.ok { background: #e7f7ee; color: var(--ok); }
+    .pill.warn { background: #fff4dc; color: var(--warn); }
+    .pill.bad { background: #fde8eb; color: var(--bad); }
+    .pill.muted { background: #eef2f7; color: var(--muted); }
+    .drawer {
+      display: none;
+      margin-top: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 16px 8px;
+    }
+    .drawer.open { display: block; }
+    .drawer-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .drawer-head h2 { margin: 0; font-size: 18px; }
+    .drawer-head p { margin: 4px 0 0; color: var(--muted); }
+    .close {
+      background: #f4f6fb;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .ladder {
+      position: relative;
+      padding-left: 28px;
+    }
+    .ladder::before {
+      content: "";
+      position: absolute;
+      left: 11px;
+      top: 10px;
+      bottom: 18px;
+      width: 2px;
+      background: #d5dde8;
+    }
+    .rung {
+      position: relative;
+      margin-bottom: 22px;
+    }
+    .rung::before {
+      content: "";
+      position: absolute;
+      left: -23px;
+      top: 5px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid #8b98ab;
+    }
+    .rung h3 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .card {
+      border-radius: 12px;
+      padding: 12px 13px;
+      border: 1px solid transparent;
+    }
+    .card .k {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      opacity: 0.8;
+    }
+    .card .t { font-weight: 650; }
+    .card .m { margin-top: 8px; font-size: 12px; opacity: 0.9; word-break: break-word; }
+    .card.ok {
+      background: #e7f7ee;
+      border-color: #b7e4c7;
+      color: var(--ok);
+    }
+    .card.warn {
+      background: #fff4dc;
+      border-color: #f0d08a;
+      color: var(--warn);
+    }
+    .card.bad {
+      background: #fde8eb;
+      border-color: #f3b4bc;
+      color: var(--bad);
+    }
+    .card.info {
+      background: #eaf2ff;
+      border-color: #bfd4f6;
+      color: var(--info);
+    }
+    .empty { color: var(--muted); margin: 0; padding: 4px 0 2px; }
+    @media (max-width: 720px) {
+      .metrics { grid-template-columns: 1fr; }
+      header, main { padding-left: 16px; padding-right: 16px; }
+      th:nth-child(8), td:nth-child(8) { display: none; }
+      .qtext { max-width: 140px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="kicker">Analyst + Auditor</p>
+    <h1>Evaluation</h1>
+    <p class="sub">Cold Q01 versus memory-verify Q06. Click a question for its pipeline.</p>
+  </header>
+  <main>
+    <section class="metrics" id="metrics"></section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Q</th>
+            <th>Question</th>
+            <th>Status</th>
+            <th>Memory</th>
+            <th>Tokens</th>
+            <th>Time</th>
+            <th>Cost</th>
+            <th>Auditor</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <section class="drawer" id="drawer"></section>
+  </main>
+  <script>
+    const DATA = {"questions": [{"qid": "Q01", "ok": true, "complete": true, "accepted": 2, "missing": 0, "disputed": 0, "tokens": 5173, "cost_inr": 0.352424, "cost_usd": 0.0036903, "wall_seconds": 25.939, "recalled": 0, "skipped_queries": 0, "supported": 2, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Who is Titan Company's Managing Director in 2026?", "reuse": false, "plant_unsupported": false, "trace": {"question": "Who is Titan Company's Managing Director in 2026?", "required_fields": ["managing_director_name", "effective_appointment_date"], "entities": ["Titan Company"], "memory_verify": false, "known_fields": [], "stored_urls": [], "queries": [{"query": "Titan Company Managing Director 2026", "targets": ["managing_director_name", "effective_appointment_date"]}, {"query": "Titan Company board of directors 2026", "targets": ["managing_director_name", "effective_appointment_date"]}, {"query": "Titan Company leadership changes 2026", "targets": ["managing_director_name", "effective_appointment_date"]}], "fetches": [{"url": "https://simplywall.st/stocks/in/consumer-durables/bse-500114/titan-shares/management", "ok": false, "title": ""}, {"url": "https://in.marketscreener.com/quote/stock/TITAN-COMPANY-LIMITED-9059025/company-governance", "ok": false, "title": ""}, {"url": "https://www.titancompany.in/leadership-team", "ok": true, "title": "Leadership Team"}, {"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "ok": true, "title": "Ajoy Chawla Named Titan Company Managing Director"}, {"url": "https://www.outlookbusiness.com/corporate/titan-co-announces-senior-mgmt-rejig-ajoy-chawla-to-be-md-from-jan-2026", "ok": true, "title": "Titan Co Announces Senior Mgmt Rejig; Ajoy Chawla to be MD From Jan 2026 \u2013 Outlo"}], "pages_used": 5, "passages_selected": 4, "claims": [{"claim_id": "C01", "field": "managing_director_name", "text": "Ajoy Chawla"}, {"claim_id": "C02", "field": "effective_appointment_date", "text": "January 1, 2026"}], "unanswered": [], "planted": null, "cross_check_skipped": false, "cross_check": [{"claim_id": "C01", "status": "skipped_multi_source", "reason": "Claim already cites more than one domain.", "independent_url": "", "evidence_origin": "none"}, {"claim_id": "C02", "status": "corroborated", "reason": "The passage states that Ajoy Chawla is set to become Managing Director from January 1, 2026, and Arun Narayan will become CEO of the jewellery division from January 1, 2026. The claim is 'January 1, 2026', which is direc", "independent_url": "https://www.outlookbusiness.com/corporate/titan-co-announces-senior-mgmt-rejig-ajoy-chawla-to-be-md-from-jan-2026", "evidence_origin": "new_search"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states that Ajoy Chawla has been appointed as Managing Director (MD) of Titan Company Limited, commencing from January 1, 2026."}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The passage explicitly states that Ajoy Chawla's appointment as Managing Director is 'commencing from January 1, 2026' and 'effective January 1, 2026'."}], "accepted": [{"field": "managing_director_name", "text": "Ajoy Chawla", "sources": ["dess.digital", "retail4growth.com"]}, {"field": "effective_appointment_date", "text": "January 1, 2026", "sources": ["dess.digital"]}], "missing": [], "complete": true}}, {"qid": "Q02", "ok": true, "complete": true, "accepted": 4, "missing": 0, "disputed": 0, "tokens": 14182, "cost_inr": 0.861393, "cost_usd": 0.0090198, "wall_seconds": 166.988, "recalled": 2, "skipped_queries": 0, "supported": 4, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "What store-network number has Titan or Tanishq most recently published, and for which date or reporting period?", "reuse": false, "plant_unsupported": false, "trace": {"question": "What store-network number has Titan or Tanishq most recently published, and for which date or reporting period?", "required_fields": ["store_network_number", "date_or_reporting_period", "chosen_figure_count", "chosen_figure_reason"], "entities": ["Titan", "Tanishq"], "memory_verify": false, "known_fields": ["managing_director_name", "effective_appointment_date"], "stored_urls": ["https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"], "queries": [{"query": "Titan Tanishq store network number \"most recently published\" as of 2026-09-26", "targets": ["store_network_number", "date_or_reporting_period"]}, {"query": "Titan Company annual report store count \"most recently published\" as of 2026-09-26", "targets": ["store_network_number", "date_or_reporting_period"]}, {"query": "Tanishq store count \"most recently published\" as of 2026-09-26", "targets": ["store_network_number", "date_or_reporting_period"]}], "fetches": [{"url": "https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "ok": true, "title": "Ajoy Chawla Named Titan Company Managing Director"}, {"url": "https://www.reuters.com/world/india/indias-titan-posts-profit-surge-strong-jewellery-demand-2026-08-07", "ok": false, "title": ""}, {"url": "https://www.titancompany.in/news/tanishq-jewellery-brand-tata-group-launches-first-us-store-new-jersey", "ok": true, "title": "Tanishq, Jewellery Brand by the Tata Group, Launches first US store In New Jerse"}, {"url": "https://www.sahi.com/news/titan-consumer-business-jumps-41-yoy-led-by-39-jewellery-growth-and-77-new-stores-458-PE1_CORP", "ok": true, "title": "Titan Consumer Business Jumps 41% YoY Led by 39% Jewellery Growth and 77 New Sto"}, {"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://www.tanishq.co.in", "ok": false, "title": ""}], "pages_used": 5, "passages_selected": 10, "claims": [{"claim_id": "C01", "field": "store_network_number", "text": "Titan operates over 3,000 retail outlets across India, including jewellery stores, watch boutiques, eyewear outlets, CaratLane stores, and Taneira experience centres."}, {"claim_id": "C02", "field": "date_or_reporting_period", "text": "Financial Year 2025-26"}, {"claim_id": "C03", "field": "chosen_figure_count", "text": "292"}, {"claim_id": "C04", "field": "chosen_figure_reason", "text": "Mia by Tanishq, a sub brand of Tanishq, expanded its presence to 292 stores across 100+ towns in Financial Year 2025-26."}], "unanswered": [], "planted": null, "cross_check_skipped": false, "cross_check": [{"claim_id": "C01", "status": "single_source", "reason": "The provided passage is the table of contents for Titan Company Limited's 42nd Annual Report 2025-26. It does not contain information about the number of retail outlets Titan operates or the types of stores mentioned in ", "independent_url": "https://www.titancompany.in/sites/default/files/2026-07/Titan%20AR%202026_0.pdf", "evidence_origin": "new_search"}, {"claim_id": "C02", "status": "corroborated", "reason": "The passage explicitly mentions 'Financial Year 2025-26' multiple times, including in the title of the annual report and in the 'Key Events in Financial Year 2025-26' section.", "independent_url": "https://www.titancompany.in/sites/default/files/2026-07/Titan%20AR%202026_0.pdf", "evidence_origin": "new_search"}, {"claim_id": "C03", "status": "single_source", "reason": "The number '292' is not present in the provided passage.", "independent_url": "https://www.titancompany.in/sites/default/files/2026-07/Titan%20AR%202026_0.pdf", "evidence_origin": "new_search"}, {"claim_id": "C04", "status": "single_source", "reason": "The passage is a table of contents and does not contain information about Mia by Tanishq, its expansion, or the number of stores it operates.", "independent_url": "https://www.titancompany.in/sites/default/files/2026-07/Titan%20AR%202026_0.pdf", "evidence_origin": "new_search"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states, \"Titan operates over 3,000 retail outlets across India, including jewellery stores, watch boutiques, eyewear outlets, CaratLane stores, and Taneira experience centres.\" This directly supports the clai"}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The passages A0003, A0004, and A0005 all contain the phrase \"Financial Year 2025-26\" multiple times, indicating that the document pertains to this period."}, {"claim_id": "C03", "verdict": "SUPPORTED", "reason": "Passage A0009 states, \"Mia by Tanishq... The brand expanded its presence to 292 stores across 100+ towns.\" This figure matches the claim."}, {"claim_id": "C04", "verdict": "SUPPORTED", "reason": "Passage A0009 states, \"Mia by Tanishq... The brand expanded its presence to 292 stores across 100+ towns... In Financial Year 2025-26, a large thrust was put in improving brand awareness...\" This confirms that Mia by Tan"}], "accepted": [{"field": "store_network_number", "text": "Titan operates over 3,000 retail outlets across India, including jewellery stores, watch boutiques, eyewear outlets, CaratLane stores, and Taneira experience centres.", "sources": ["retail4growth.com"]}, {"field": "date_or_reporting_period", "text": "Financial Year 2025-26", "sources": ["nseindia.com PDF"]}, {"field": "chosen_figure_count", "text": "292", "sources": ["nseindia.com PDF"]}, {"field": "chosen_figure_reason", "text": "Mia by Tanishq, a sub brand of Tanishq, expanded its presence to 292 stores across 100+ towns in Financial Year 2025-26.", "sources": ["nseindia.com PDF"]}], "missing": [], "complete": true}}, {"qid": "Q03", "ok": true, "complete": false, "accepted": 0, "missing": 3, "disputed": 0, "tokens": 7822, "cost_inr": 0.387558, "cost_usd": 0.0040582, "wall_seconds": 20.462, "recalled": 0, "skipped_queries": 0, "supported": 0, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Name two Indian jewellery retailers that publicly reported actual new store openings in 2025, and the counts they stated.", "reuse": false, "plant_unsupported": false, "trace": {"question": "Name two Indian jewellery retailers that publicly reported actual new store openings in 2025, and the counts they stated.", "required_fields": ["retailer_name", "opened_added_number", "window_source_used"], "entities": ["Indian jewellery retailers"], "memory_verify": false, "known_fields": [], "stored_urls": [], "queries": [{"query": "Indian jewellery retailers new store openings 2025 actual numbers", "targets": ["retailer_name", "opened_added_number", "window_source_used"]}, {"query": "top Indian jewellery companies store expansion 2025 reports", "targets": ["retailer_name", "opened_added_number", "window_source_used"]}], "fetches": [{"url": "https://images.assettype.com/bloombergquint/2024-06/ccf461f1-7931-43a1-bd39-7618c2b4aed6/Motilal_Oswal_Jewlery_Thematic_Note.pdf", "ok": false, "title": ""}, {"url": "https://www.icra.in/Rating/DownloadResearchSummaryReport?id=6349", "ok": true, "title": "PowerPoint Presentation"}, {"url": "https://rapaport.com/news/indian-jeweler-broadens-reach-to-7-new-countries/", "ok": true, "title": "Indian Jeweler Broadens Reach to 7 New Countries"}, {"url": "https://apviz.io/blog/india-jewelry-market-consumers/", "ok": true, "title": "The Indian jewelry market: everything you need to know about today's consumer"}, {"url": "https://www.kenresearch.com/industry-reports/india-jewelry-market", "ok": true, "title": "India Jewelry Market Share, Companies & Trends Report 2026-2032"}, {"url": "https://www.marknteladvisors.com/press-release/india-diamond-jewelry-market", "ok": true, "title": "Jewelry Stores Segment Lead the India Diamond Jewelry Market"}], "pages_used": 5, "passages_selected": 11, "claims": [], "unanswered": [{"field": "retailer_name", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}, {"field": "opened_added_number", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}, {"field": "window_source_used", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}], "planted": null, "cross_check_skipped": false, "cross_check": [], "auditor": [], "accepted": [], "missing": [{"field": "retailer_name", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}, {"field": "opened_added_number", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}, {"field": "window_source_used", "reason": "No Indian jewellery retailers publicly reported actual new store openings in 2025."}], "complete": false}}, {"qid": "Q04", "ok": true, "complete": true, "accepted": 2, "missing": 0, "disputed": 0, "tokens": 7919, "cost_inr": 0.428785, "cost_usd": 0.0044899, "wall_seconds": 21.468, "recalled": 3, "skipped_queries": 0, "supported": 2, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Given that Ajoy Chawla is already known as Titan Company's Managing Director, whom did he succeed, and when did that predecessor retire or step down?", "reuse": true, "plant_unsupported": false, "trace": {"question": "Given that Ajoy Chawla is already known as Titan Company's Managing Director, whom did he succeed, and when did that predecessor retire or step down?", "required_fields": ["predecessor_name", "predecessor_retirement_date"], "entities": ["Ajoy Chawla", "Titan Company"], "memory_verify": false, "known_fields": ["managing_director_name", "effective_appointment_date", "store_network_number"], "stored_urls": ["https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"], "queries": [{"query": "who was the managing director of Titan Company before Ajoy Chawla", "targets": ["predecessor_name"]}, {"query": "when did Bhaskar Bhat retire from Titan Company", "targets": ["predecessor_retirement_date"]}], "fetches": [{"url": "https://www.livemint.com/companies/company-results/titan-names-ajoy-chawla-as-next-md-11746712805137.html", "ok": true, "title": "Titan names Ajoy Chawla as next MD | Company Business News"}, {"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "ok": true, "title": "Ajoy Chawla Named Titan Company Managing Director"}, {"url": "https://en.wikipedia.org/wiki/Titan_Company", "ok": true, "title": "Titan Company - Wikipedia"}, {"url": "https://www.thehourmarkers.com/articles/titan-md-ajoy-chawla", "ok": true, "title": "Leadership Transition At Titan: Ajoy Chawla To Succeed C.K. Venkataraman"}, {"url": "https://www.bwmarketingworld.com/article/titan-names-ajoy-chawla-as-next-md-c-k-venkataraman-to-retire-in-december-2025-556174", "ok": false, "title": ""}], "pages_used": 5, "passages_selected": 12, "claims": [{"claim_id": "C01", "field": "predecessor_name", "text": "C.K. Venkataraman"}, {"claim_id": "C02", "field": "predecessor_retirement_date", "text": "December 31, 2025"}], "unanswered": [], "planted": null, "cross_check_skipped": false, "cross_check": [{"claim_id": "C01", "status": "skipped_multi_source", "reason": "Claim already cites more than one domain.", "independent_url": "", "evidence_origin": "none"}, {"claim_id": "C02", "status": "corroborated", "reason": "The passage states that CK Venkataraman will retire on December 31, 2025.", "independent_url": "https://bestmediainfo.com/mediainfo/mediainfo-marketing/titans-ck-venkataraman-to-retire-after-35-years-ajoy-chawla-to-take-over-as-md-9048928", "evidence_origin": "new_search"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states that C.K. Venkataraman is the current Managing Director and will retire on December 31, 2025, and Ajoy Chawla will succeed him. This indicates C.K. Venkataraman is the predecessor."}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The passage explicitly states that C.K. Venkataraman will retire from his position on December 31, 2025."}], "accepted": [{"field": "predecessor_name", "text": "C.K. Venkataraman", "sources": ["thehourmarkers.com", "retail4growth.com", "livemint.com"]}, {"field": "predecessor_retirement_date", "text": "December 31, 2025", "sources": ["thehourmarkers.com"]}], "missing": [], "complete": true}}, {"qid": "Q05", "ok": true, "complete": true, "accepted": 4, "missing": 0, "disputed": 0, "tokens": 10839, "cost_inr": 0.592912, "cost_usd": 0.0062085, "wall_seconds": 24.622, "recalled": 0, "skipped_queries": 0, "supported": 4, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Name one funding round announced by an Indian jewellery brand or an Indian quick-commerce company in 2024, 2025, or 2026.", "reuse": false, "plant_unsupported": false, "trace": {"question": "Name one funding round announced by an Indian jewellery brand or an Indian quick-commerce company in 2024, 2025, or 2026.", "required_fields": ["company_name", "amount", "date", "investors"], "entities": ["Indian jewellery brand", "Indian quick-commerce company"], "memory_verify": false, "known_fields": [], "stored_urls": [], "queries": [{"query": "Indian jewellery brand funding round 2024 2025 2026", "targets": ["company_name", "amount", "date", "investors"]}, {"query": "Indian quick-commerce company funding round 2024 2025 2026", "targets": ["company_name", "amount", "date", "investors"]}], "fetches": [{"url": "https://www.jckonline.com/editorial-article/limelight-lab-grown-funding", "ok": false, "title": ""}, {"url": "https://www.ibef.org/industry/gems-jewellery-india", "ok": true, "title": "India's Gems and Jewellery Industry and its Market Size"}, {"url": "https://retail.economictimes.indiatimes.com/news/e-commerce/e-tailing/quick-commerce-expands-beyond-groceries-with-vc-funding-but-scale-questions-persist/129915540", "ok": true, "title": "Quick commerce expands beyond groceries with VC funding, but scale questions per"}, {"url": "https://www.failory.com/startups/jewelry", "ok": true, "title": "Top 24 Jewelry Startups to Watch in 2026"}, {"url": "https://www.renub.com/india-luxury-jewelry-market-p.php", "ok": true, "title": "India Luxury Jewelry Market Size and Forecast Trands 2026-2034"}, {"url": "https://www.moneycontrol.com/news/business/funding/dazzl-raises-3-2-million-in-seed-funding-from-stellaris-to-build-quick-commerce-platform-for-beauty-services-13770613.html", "ok": true, "title": "Dazzl raises $3.2 million in seed funding from Stellaris, to build quick commerc"}], "pages_used": 5, "passages_selected": 12, "claims": [{"claim_id": "C01", "field": "company_name", "text": "Dazzl"}, {"claim_id": "C02", "field": "amount", "text": "$3.2 million"}, {"claim_id": "C03", "field": "date", "text": "January"}, {"claim_id": "C04", "field": "investors", "text": "Stellaris Venture Partners and others"}], "unanswered": [], "planted": null, "cross_check_skipped": false, "cross_check": [{"claim_id": "C01", "status": "corroborated", "reason": "The passage states, \"Dazzl, an on-demand beauty and wellness services startup, has raised $3.2 million in a seed funding round led by Stellaris Venture Partners.\"", "independent_url": "https://www.moneycontrol.com/news/business/funding/dazzl-raises-3-2-million-in-seed-funding-from-stellaris-to-build-quick-commerce-platform-for-beauty-services-13770613.html", "evidence_origin": "new_search"}, {"claim_id": "C02", "status": "corroborated", "reason": "The passage states, \"Dazzl, an on-demand beauty and wellness services startup, has raised $3.2 million in a seed funding round led by Stellaris Venture Partners.\"", "independent_url": "https://www.moneycontrol.com/news/business/funding/dazzl-raises-3-2-million-in-seed-funding-from-stellaris-to-build-quick-commerce-platform-for-beauty-services-13770613.html", "evidence_origin": "new_search"}, {"claim_id": "C03", "status": "corroborated", "reason": "The passage states, \"The round marks Dazzl\u2019s first institutional fundraise, the company said on January 13.\"", "independent_url": "https://www.moneycontrol.com/news/business/funding/dazzl-raises-3-2-million-in-seed-funding-from-stellaris-to-build-quick-commerce-platform-for-beauty-services-13770613.html", "evidence_origin": "new_search"}, {"claim_id": "C04", "status": "corroborated", "reason": "The passage states, \"Dazzl, an on-demand beauty and wellness services startup, has raised $3.2 million in a seed funding round led by Stellaris Venture Partners, as it looks to build a quick commerce-style platform for e", "independent_url": "https://www.moneycontrol.com/news/business/funding/dazzl-raises-3-2-million-in-seed-funding-from-stellaris-to-build-quick-commerce-platform-for-beauty-services-13770613.html", "evidence_origin": "new_search"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states that Dazzl raised funds in January, which falls within the specified period of 2025."}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The passage explicitly states that Dazzl raised $3.2 million."}, {"claim_id": "C03", "verdict": "SUPPORTED", "reason": "The passage states that Dazzl raised funds in January."}, {"claim_id": "C04", "verdict": "SUPPORTED", "reason": "The passage states that Dazzl raised funds from Stellaris Venture Partners and others."}], "accepted": [{"field": "company_name", "text": "Dazzl", "sources": ["economictimes.indiatimes.com"]}, {"field": "amount", "text": "$3.2 million", "sources": ["economictimes.indiatimes.com"]}, {"field": "date", "text": "January", "sources": ["economictimes.indiatimes.com"]}, {"field": "investors", "text": "Stellaris Venture Partners and others", "sources": ["economictimes.indiatimes.com"]}], "missing": [], "complete": true}}, {"qid": "Q06", "ok": true, "complete": true, "accepted": 2, "missing": 0, "disputed": 0, "tokens": 3051, "cost_inr": 0.199395, "cost_usd": 0.0020879, "wall_seconds": 7.853, "recalled": 3, "skipped_queries": 0, "supported": 2, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Using stored Titan facts: confirm Titan Company's Managing Director full name and the effective appointment date in 2026. Cite one page.", "reuse": true, "plant_unsupported": false, "trace": {"question": "Using stored Titan facts: confirm Titan Company's Managing Director full name and the effective appointment date in 2026. Cite one page.", "required_fields": ["managing_director_full_name", "appointment_effective_date"], "entities": ["Titan Company"], "memory_verify": true, "known_fields": ["managing_director_name", "effective_appointment_date", "store_network_number"], "stored_urls": ["https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"], "queries": [], "fetches": [{"url": "https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "ok": true, "title": "Ajoy Chawla Named Titan Company Managing Director"}, {"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}], "pages_used": 2, "passages_selected": 4, "claims": [{"claim_id": "C01", "field": "managing_director_full_name", "text": "Ajoy Chawla"}, {"claim_id": "C02", "field": "appointment_effective_date", "text": "January 1, 2026"}], "unanswered": [], "planted": null, "cross_check_skipped": true, "cross_check": [{"claim_id": "C01", "status": "single_source", "reason": "Memory verify: reopened stored citations; no second-source search.", "independent_url": "", "evidence_origin": "none"}, {"claim_id": "C02", "status": "single_source", "reason": "Memory verify: reopened stored citations; no second-source search.", "independent_url": "", "evidence_origin": "none"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states that 'Ajoy Chawla has been appointed as Managing Director (MD) of Titan Company Limited, commencing from January 1, 2026'."}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The passage explicitly states that Ajoy Chawla's appointment as Managing Director of Titan Company Limited is 'commencing from January 1, 2026' and 'effective January 1, 2026'."}], "accepted": [{"field": "managing_director_full_name", "text": "Ajoy Chawla", "sources": ["dess.digital"]}, {"field": "appointment_effective_date", "text": "January 1, 2026", "sources": ["dess.digital"]}], "missing": [], "complete": true}}, {"qid": "Q07", "ok": true, "complete": false, "accepted": 1, "missing": 5, "disputed": 0, "tokens": 3909, "cost_inr": 0.25171, "cost_usd": 0.0026357, "wall_seconds": 47.287, "recalled": 6, "skipped_queries": 0, "supported": 1, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Titan or Tanishq already has one store-network figure on file. Find a second published figure that is not the same number. Give both with their dates or periods, then choose which figure to treat as the latest and why.", "reuse": true, "plant_unsupported": false, "trace": {"question": "Titan or Tanishq already has one store-network figure on file. Find a second published figure that is not the same number. Give both with their dates or periods, then choose which figure to treat as the latest and why.", "required_fields": ["store_network_figure_1", "store_network_figure_1_date_or_period", "store_network_figure_2", "store_network_figure_2_date_or_period", "chosen_figure_count", "chosen_figure_reason"], "entities": ["Titan", "Tanishq"], "memory_verify": true, "known_fields": ["managing_director_name", "effective_appointment_date", "store_network_number", "chosen_figure_reason", "managing_director_full_name", "appointment_effective_date"], "stored_urls": ["https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "https://nsearchives.nseindia.com/annual_reports/AR_29549_TITAN_2025_2026_A_11906853_03072026125809.pdf"], "queries": [], "fetches": [{"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://nsearchives.nseindia.com/annual_reports/AR_29549_TITAN_2025_2026_A_11906853_03072026125809.pdf", "ok": true, "title": ""}], "pages_used": 2, "passages_selected": 5, "claims": [{"claim_id": "C01", "field": "store_network_figure_1", "text": "3,000"}], "unanswered": [{"field": "store_network_figure_1_date_or_period", "reason": "Not specified in the passage."}, {"field": "store_network_figure_2", "reason": "A second distinct store network figure for Titan or Tanishq is not available in the provided passages."}, {"field": "store_network_figure_2_date_or_period", "reason": "A second distinct store network figure for Titan or Tanishq is not available in the provided passages."}, {"field": "chosen_figure_count", "reason": "Only one store network figure was found."}], "planted": null, "cross_check_skipped": true, "cross_check": [{"claim_id": "C01", "status": "single_source", "reason": "Memory verify: reopened stored citations; no second-source search.", "independent_url": "", "evidence_origin": "none"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage states, 'Titan operates over 3,000 retail outlets across India, including jewellery stores, watch boutiques, eyewear outlets, CaratLane stores, and Taneira experience centres.'"}], "accepted": [{"field": "store_network_figure_1", "text": "3,000", "sources": ["retail4growth.com"]}], "missing": [{"field": "store_network_figure_1_date_or_period", "reason": "Not specified in the passage."}, {"field": "store_network_figure_2", "reason": "A second distinct store network figure for Titan or Tanishq is not available in the provided passages."}, {"field": "store_network_figure_2_date_or_period", "reason": "A second distinct store network figure for Titan or Tanishq is not available in the provided passages."}, {"field": "chosen_figure_count", "reason": "Only one store network figure was found."}, {"field": "chosen_figure_reason", "reason": "Only one store network figure was found."}], "complete": false}}, {"qid": "Q08", "ok": true, "complete": true, "accepted": 4, "missing": 0, "disputed": 0, "tokens": 9356, "cost_inr": 0.581309, "cost_usd": 0.006087, "wall_seconds": 24.877, "recalled": 5, "skipped_queries": 0, "supported": 4, "unsupported": 0, "contradicted": 0, "uncited": 0, "present": true, "question": "Using memory plus a small verify pass: is Ajoy Chawla still described as Titan Company's Managing Director in 2026? Cite one page. Also name one Titan jewellery brand mentioned on an official or news page.", "reuse": true, "plant_unsupported": false, "trace": {"question": "Using memory plus a small verify pass: is Ajoy Chawla still described as Titan Company's Managing Director in 2026? Cite one page. Also name one Titan jewellery brand mentioned on an official or news page.", "required_fields": ["is_ajoy_chawla_md_2026", "md_citation", "jewellery_brand", "brand_citation"], "entities": ["Ajoy Chawla", "Titan Company"], "memory_verify": false, "known_fields": ["managing_director_name", "effective_appointment_date", "store_network_number", "managing_director_full_name", "appointment_effective_date"], "stored_urls": ["https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"], "queries": [{"query": "Ajoy Chawla \"Managing Director\" Titan Company 2026 official site news", "targets": ["is_ajoy_chawla_md_2026", "md_citation"]}, {"query": "Titan Company jewellery brand official news page", "targets": ["jewellery_brand", "brand_citation"]}], "fetches": [{"url": "https://dess.digital/ajoy-chawla-appointed-as-managing-director-of-titan-company/", "ok": true, "title": "Ajoy Chawla Named Titan Company Managing Director"}, {"url": "https://www.livemint.com/companies/company-results/titan-names-ajoy-chawla-as-next-md-11746712805137.html", "ok": true, "title": "Titan names Ajoy Chawla as next MD | Company Business News"}, {"url": "https://www.thehindubusinessline.com/companies/leadership-shuffle-at-titan-ajoy-chawla-to-succeed-ck-venkataraman-as-md-from-jan-2026/article69800161.ece", "ok": true, "title": "Leadership shuffle at Titan: Ajoy Chawla to succeed CK Venkataraman as MD from J"}, {"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://economictimes.indiatimes.com/industry/cons-products/fashion-/-cosmetics-/-jewellery/titan-co-announces-senior-management-changes-ajoy-chawla-to-be-md-from-jan-2026/articleshow/122385367.cms?from=mdr", "ok": true, "title": "Titan Co announces senior management changes; Ajoy Chawla to be MD from Jan 2026"}, {"url": "https://money.rediff.com/news/market/titan-co-announces-management-restructuring/29994120250711", "ok": true, "title": "Titan Co Announces Management Restructuring"}], "pages_used": 5, "passages_selected": 11, "claims": [{"claim_id": "C01", "field": "is_ajoy_chawla_md_2026", "text": "Ajoy Chawla has been appointed as Managing Director (MD) of Titan Company Limited, commencing from January 1, 2026, subject to the approval of shareholders."}, {"claim_id": "C02", "field": "md_citation", "text": "Ajoy Chawla Named Titan Company Managing Director"}, {"claim_id": "C03", "field": "jewellery_brand", "text": "Tanishq"}, {"claim_id": "C04", "field": "brand_citation", "text": "Titan names Ajoy Chawla as next MD | Company Business News"}], "unanswered": [], "planted": null, "cross_check_skipped": false, "cross_check": [{"claim_id": "C01", "status": "corroborated", "reason": "The passage states that Ajoy Chawla is set to become the Managing Director of Titan Company Ltd from January 1, 2026.", "independent_url": "https://money.rediff.com/news/market/titan-co-announces-management-restructuring/29994120250711", "evidence_origin": "new_search"}, {"claim_id": "C02", "status": "corroborated", "reason": "The passage states that Ajoy Chawla is set to become the Managing Director of Titan Company Ltd from January 1, 2026.", "independent_url": "https://money.rediff.com/news/market/titan-co-announces-management-restructuring/29994120250711", "evidence_origin": "new_search"}, {"claim_id": "C03", "status": "single_source", "reason": "The passage mentions Tanishq as a business unit within Titan Company, but the claim 'Tanishq' by itself is not a verifiable fact about a person or company.", "independent_url": "https://money.rediff.com/news/market/titan-co-announces-management-restructuring/29994120250711", "evidence_origin": "new_search"}, {"claim_id": "C04", "status": "corroborated", "reason": "The passage states that Ajoy Chawla is set to become the Managing Director of Titan Company Ltd from January 1, 2026.", "independent_url": "https://money.rediff.com/news/market/titan-co-announces-management-restructuring/29994120250711", "evidence_origin": "new_search"}], "auditor": [{"claim_id": "C01", "verdict": "SUPPORTED", "reason": "The passage A0001 explicitly states: 'Ajoy Chawla has been appointed as Managing Director (MD) of Titan Company Limited, commencing from January 1, 2026, subject to the approval of shareholders.'"}, {"claim_id": "C02", "verdict": "SUPPORTED", "reason": "The title of the article A0001 and A0002 is 'Ajoy Chawla Named Titan Company Managing Director', which directly matches the claim."}, {"claim_id": "C03", "verdict": "SUPPORTED", "reason": "Passage A0006 states: 'Its portfolio includes jewellery (Tanishq), watches, eyewear, ethnic wear, and accessories.' This confirms Tanishq as a jewellery brand of Titan."}, {"claim_id": "C04", "verdict": "SUPPORTED", "reason": "The title of the article A0008, A0009, and A0010 is 'Titan names Ajoy Chawla as next MD | Company Business News', which directly matches the claim."}], "accepted": [{"field": "is_ajoy_chawla_md_2026", "text": "Ajoy Chawla has been appointed as Managing Director (MD) of Titan Company Limited, commencing from January 1, 2026, subject to the approval of shareholders.", "sources": ["dess.digital"]}, {"field": "md_citation", "text": "Ajoy Chawla Named Titan Company Managing Director", "sources": ["dess.digital"]}, {"field": "jewellery_brand", "text": "Tanishq", "sources": ["livemint.com"]}, {"field": "brand_citation", "text": "Titan names Ajoy Chawla as next MD | Company Business News", "sources": ["livemint.com"]}], "missing": [], "complete": true}}, {"qid": "Q09", "ok": true, "complete": false, "accepted": 0, "missing": 2, "disputed": 0, "tokens": 4022, "cost_inr": 0.221541, "cost_usd": 0.0023198, "wall_seconds": 50.423, "recalled": 8, "skipped_queries": 0, "supported": 0, "unsupported": 1, "contradicted": 0, "uncited": 0, "present": true, "question": "What Tanishq store-network number is stated in the Retail4Growth article about Ajoy Chawla becoming Titan Managing Director?", "reuse": false, "plant_unsupported": true, "trace": {"question": "What Tanishq store-network number is stated in the Retail4Growth article about Ajoy Chawla becoming Titan Managing Director?", "required_fields": ["tanishq_store_network_number"], "entities": ["Tanishq", "Retail4Growth", "Ajoy Chawla", "Titan"], "memory_verify": true, "known_fields": ["managing_director_name", "effective_appointment_date", "store_network_number", "chosen_figure_reason", "managing_director_full_name", "appointment_effective_date", "is_ajoy_chawla_md_2026", "md_citation"], "stored_urls": ["https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "https://nsearchives.nseindia.com/annual_reports/AR_29549_TITAN_2025_2026_A_11906853_03072026125809.pdf"], "queries": [], "fetches": [{"url": "https://www.retail4growth.com/news/ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699", "ok": true, "title": "Ajoy Chawla takes charge as Managing Director at Titan Company Limited"}, {"url": "https://nsearchives.nseindia.com/annual_reports/AR_29549_TITAN_2025_2026_A_11906853_03072026125809.pdf", "ok": true, "title": ""}], "pages_used": 2, "passages_selected": 5, "claims": [{"claim_id": "C01", "field": "store_network_number", "text": "Titan Company operates 9,999 Tanishq stores in Antarctica as of March 2026."}], "unanswered": [{"field": "tanishq_store_network_number", "reason": "The Retail4Growth article (P0001, P0002) does not state a specific Tanishq store network number. It mentions Titan operates over 3,000 retail outlets across India, including jewellery stores, but does not break down the number for Tanishq specifically."}], "planted": {"claim_id": "C01", "text": "Titan Company operates 9,999 Tanishq stores in Antarctica as of March 2026."}, "cross_check_skipped": true, "cross_check": [{"claim_id": "C01", "status": "single_source", "reason": "Memory verify: reopened stored citations; no second-source search.", "independent_url": "", "evidence_origin": "none"}], "auditor": [{"claim_id": "C01", "verdict": "UNSUPPORTED", "reason": "The claim states Titan Company operates 9,999 Tanishq stores in Antarctica as of March 2026. The passage mentions Titan operates over 3,000 retail outlets across India, including jewellery stores, watch boutiques, eyewea"}], "accepted": [], "missing": [{"field": "tanishq_store_network_number", "reason": "The Retail4Growth article (P0001, P0002) does not state a specific Tanishq store network number. It mentions Titan operates over 3,000 retail outlets across Ind"}, {"field": "store_network_number", "reason": "The claim states Titan Company operates 9,999 Tanishq stores in Antarctica as of March 2026. The passage mentions Titan operates over 3,000 retail outlets acros"}], "complete": false}}], "naive": {"present": true, "answer": "C. K. Venkataraman is the Managing Director of Titan Company Limited, with his appointment effective from October 1, 2020.", "tokens": 166, "cost_inr": 0.021774, "wall_seconds": 2.606}, "metrics": {"token_drop_pct": 41, "cost_drop_pct": 43, "time_drop_pct": 70, "q01_tokens": 5173, "q06_tokens": 3051, "q01_cost_inr": 0.352424, "q06_cost_inr": 0.199395, "q01_seconds": 25.939, "q06_seconds": 7.853}};
+    const m = DATA.metrics || {};
+
+    function fmt(n) { return Number(n || 0).toLocaleString("en-IN"); }
+    function rupee(n) { return "₹" + Number(n || 0).toFixed(2); }
+    function sec(n) { return Number(n || 0).toFixed(1) + "s"; }
+    function drop(pct) { return pct == null ? "—" : "−" + pct + "%"; }
+    function esc(v) {
+      return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function pretty(s) { return String(s || "").replace(/_/g, " "); }
+    function memoryUsed(row) {
+      const t = row.trace || {};
+      return Boolean(row.recalled || row.skipped_queries || t.memory_verify);
+    }
+
+    document.getElementById("metrics").innerHTML = [
+      metric("tokens", "Tokens", drop(m.token_drop_pct), fmt(m.q01_tokens) + " → " + fmt(m.q06_tokens)),
+      metric("cost", "Cost", drop(m.cost_drop_pct), rupee(m.q01_cost_inr) + " → " + rupee(m.q06_cost_inr)),
+      metric("time", "Time", drop(m.time_drop_pct), sec(m.q01_seconds) + " → " + sec(m.q06_seconds)),
+    ].join("");
+
+    function metric(kind, label, value, note) {
+      return '<article class="metric ' + kind + '"><div class="label">' + label +
+        '</div><div class="value">' + esc(value) + '</div><div class="note">' + esc(note) + "</div></article>";
+    }
+
+    const tbody = document.getElementById("rows");
+    DATA.questions.forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.id = row.qid.toLowerCase();
+      tr.tabIndex = 0;
+      tr.setAttribute("role", "button");
+      const status = !row.present ? pill("warn", "missing")
+        : row.complete ? pill("ok", "complete")
+        : pill("warn", "incomplete");
+      const memory = memoryUsed(row) ? pill("ok", "used") : pill("muted", "—");
+      const auditor = row.unsupported ? pill("bad", row.unsupported + " UNSUPPORTED")
+        : row.supported ? pill("ok", row.supported + " SUPPORTED")
+        : pill("muted", "—");
+      tr.innerHTML =
+        '<td class="qid">' + esc(row.qid) + "</td>" +
+        '<td><span class="qtext" title="' + esc(row.question) + '">' + esc(row.question) + "</span></td>" +
+        "<td>" + status + "</td>" +
+        "<td>" + memory + "</td>" +
+        '<td class="num">' + (row.present ? fmt(row.tokens) : "—") + "</td>" +
+        '<td class="num">' + (row.present ? sec(row.wall_seconds) : "—") + "</td>" +
+        '<td class="num">' + (row.present ? rupee(row.cost_inr) : "—") + "</td>" +
+        "<td>" + auditor + "</td>";
+      tr.addEventListener("click", () => openRow(row, tr));
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRow(row, tr); }
+      });
+      tbody.appendChild(tr);
+    });
+
+    function pill(kind, text) {
+      return '<span class="pill ' + kind + '">' + esc(text) + "</span>";
+    }
+
+    function openRow(row, tr) {
+      document.querySelectorAll("tbody tr").forEach((el) => el.classList.remove("active"));
+      tr.classList.add("active");
+      const el = document.getElementById("drawer");
+      el.classList.add("open");
+      el.innerHTML =
+        '<div class="drawer-head"><div><h2>' + esc(row.qid) + "</h2><p>" + esc(row.question) +
+        "</p></div><button class=\"close\" id=\"closeDrawer\">Close</button></div>" +
+        '<div class="ladder">' +
+          rung("Specify", specifyCards(row)) +
+          rung("Memory", memoryCards(row)) +
+          rung("Search", searchCards(row)) +
+          rung("Pages", pagesCards(row)) +
+          rung("Analyst", analystCards(row)) +
+          rung("Cross Check", crossCheckCards(row)) +
+          rung("Auditor", auditorCards(row)) +
+          rung("Final Gate", gateCards(row)) +
+        "</div>";
+      document.getElementById("closeDrawer").addEventListener("click", () => {
+        document.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("active"));
+        el.classList.remove("open");
+        el.innerHTML = "";
+      });
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function rung(title, html) {
+      return '<section class="rung"><h3>' + esc(title) + "</h3>" + html + "</section>";
+    }
+
+    function specifyCards(row) {
+      const t = row.trace || {};
+      return grid([
+        ...((t.entities || []).map((x) => card("info", "Entity", x, ""))),
+        ...((t.required_fields || []).map((x) => card("info", "Field", x, ""))),
+      ], "No specification in this trace.");
+    }
+    function memoryCards(row) {
+      const t = row.trace || {};
+      return grid([
+        card(t.memory_verify ? "ok" : (memoryUsed(row) ? "ok" : "warn"), "Path",
+          t.memory_verify ? "Memory verify" : (memoryUsed(row) ? "Recalled, then searched" : "Full search"),
+          t.memory_verify
+            ? "Reopened stored URLs. No plan, search, or wave 2."
+            : (memoryUsed(row) ? (row.recalled || 0) + " recalled · " + (row.skipped_queries || 0) + " queries skipped" : "Required fields were not all known.")),
+        ...(t.known_fields || []).slice(0, 6).map((x) => card("ok", "Known field", x, "")),
+        ...(t.stored_urls || []).map((u) => card("info", "Stored URL", host(u), u)),
+      ], "No memory event.");
+    }
+    function searchCards(row) {
+      const t = row.trace || {};
+      return grid((t.queries || []).map((q) => card("info", (q.targets || []).join(", ") || "Query", q.query, "")), "No live search (memory verify).");
+    }
+    function pagesCards(row) {
+      const t = row.trace || {};
+      const extra = (t.pages_used != null)
+        ? [card("info", "Budget", t.pages_used + " pages", (t.passages_selected || 0) + " passages")]
+        : [];
+      const fetches = (t.fetches || []).map((f) => card(f.ok ? "ok" : "bad", f.ok ? "Fetched" : "Failed", f.title || host(f.url), f.url));
+      return grid(extra.concat(fetches), "No pages fetched.");
+    }
+    function analystCards(row) {
+      const t = row.trace || {};
+      const cards = (t.claims || []).map((c) => card("info", c.claim_id + " · " + c.field, c.text, ""));
+      (t.unanswered || []).forEach((u) => cards.push(card("warn", "Unanswered", u.field, u.reason)));
+      if (t.planted) cards.push(card("bad", "Planted " + t.planted.claim_id, t.planted.text, "False claim injected for the auditor."));
+      return grid(cards, "No analyst claims.");
+    }
+    function crossCheckCards(row) {
+      const t = row.trace || {};
+      const cards = [];
+      if (t.cross_check_skipped) {
+        cards.push(card("warn", "Path", "Skipped independent search", "Memory verify: no second-source search."));
+      }
+      (t.cross_check || []).forEach((v) => {
+        const kind = v.status === "corroborated" ? "ok"
+          : v.status === "conflicting" ? "bad"
+          : v.status === "skipped_multi_source" ? "info"
+          : "warn";
+        const more = [host(v.independent_url), v.evidence_origin && v.evidence_origin !== "none" ? v.evidence_origin : ""]
+          .filter(Boolean).join(" · ");
+        cards.push(card(kind, v.claim_id + " · " + v.status, v.reason || v.status, more));
+      });
+      return grid(cards, "No cross-check in this trace.");
+    }
+    function auditorCards(row) {
+      const t = row.trace || {};
+      return grid((t.auditor || []).map((a) => {
+        const kind = a.verdict === "SUPPORTED" ? "ok" : a.verdict === "UNSUPPORTED" ? "bad" : "warn";
+        return card(kind, a.claim_id + " · " + a.verdict, a.reason || a.verdict, "");
+      }), "No auditor verdicts.");
+    }
+    function gateCards(row) {
+      const t = row.trace || {};
+      const cards = (t.accepted || []).map((a) => card("ok", a.field, a.text, (a.sources || []).join(" · ")));
+      (t.missing || []).forEach((miss) => cards.push(card("warn", "Missing · " + miss.field, miss.reason || "unanswered", "")));
+      if (row.qid === "Q01" && DATA.naive && DATA.naive.answer) {
+        cards.push(card("warn", "Naive one-shot", DATA.naive.answer, rupee(DATA.naive.cost_inr) + " · " + sec(DATA.naive.wall_seconds)));
+      }
+      return grid(cards, "Gate kept nothing.");
+    }
+
+    function grid(cards, empty) {
+      if (!cards || !cards.length) return '<p class="empty">' + esc(empty || "Nothing here.") + "</p>";
+      return '<div class="cards">' + cards.join("") + "</div>";
+    }
+    function card(cls, k, t, more) {
+      return '<article class="card ' + cls + '"><div class="k">' + esc(pretty(k)) + '</div><div class="t">' +
+        esc(t) + "</div>" + (more ? '<div class="m">' + esc(more) + "</div>" : "") + "</article>";
+    }
+    function host(url) {
+      try { return new URL(url).host; } catch (e) { return url; }
+    }
+  </script>
+</body>
+</html>

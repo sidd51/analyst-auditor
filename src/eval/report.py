@@ -249,6 +249,7 @@ def write_eval_page(root: Path, rows: list[dict]) -> Path:
     out = root / "ui" / "eval.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
+    (out.parent / "index.html").write_text(html, encoding="utf-8")
     return out
 
 

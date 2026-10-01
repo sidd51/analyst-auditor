@@ -50,7 +50,9 @@ The additional cost buys a research/verification capability that the naive appro
 
 Full columns: `[reports/cost.md](reports/cost.md)`, `[reports/auditor.md](reports/auditor.md)`. Decisions and failures: `[WRITEUP.md](WRITEUP.md)`.
 
-Evaluation screen: [`ui/eval.html`](ui/eval.html) (rebuild with `python -m src.eval.report`).
+**Live Evaluation screen (open this):** [sidd51.github.io/analyst-auditor](https://sidd51.github.io/analyst-auditor/)
+
+That page is static HTML generated from the traces. Rebuild with `python -m src.eval.report`.
 
 
 ### Architecture
