@@ -13,9 +13,11 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 - Bounded fetch: 5 pages, then +4 if fields are still missing, never more than 15.
 - Scored eval: nine live questions, naive baseline, cost and auditor tables from traces.
 
-## Results (live eval, shared memory)
+**Live Evaluation screen (open this):** [sidd51.github.io/analyst-auditor](https://sidd51.github.io/analyst-auditor/)
+That page is static HTML generated from the traces. Rebuild with `python -m src.eval.report`.
 
-Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eval.report` (no API calls).
+## Results (live eval, shared memory)
+Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eval.report`.
 
 
 |        | Cold Q01 | Memory-verify Q06 |
@@ -49,10 +51,6 @@ The additional cost buys a research/verification capability that the naive appro
 
 
 Full columns: `[reports/cost.md](reports/cost.md)`, `[reports/auditor.md](reports/auditor.md)`. Decisions and failures: `[WRITEUP.md](WRITEUP.md)`.
-
-**Live Evaluation screen (open this):** [sidd51.github.io/analyst-auditor](https://sidd51.github.io/analyst-auditor/)
-
-That page is static HTML generated from the traces. Rebuild with `python -m src.eval.report`.
 
 
 ### Architecture
