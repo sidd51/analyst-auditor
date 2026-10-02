@@ -89,18 +89,19 @@ Assignment says: solve one properly rather than four loosely.
 
 ---
 
-## The eight questions (locked for Step 6)
+## The nine questions (locked)
 
-Increasing difficulty. Two reuse entities. One disagreement.
+Increasing difficulty. Mixed industries. At least two reuse. One planted unsupported.
 
-1. Who is the current MD/CEO of Titan Company (Tanishq parent)? Cite a source.
-2. How many Tanishq stores did Titan last report, and for which period?
-3. Which three Indian jewellery retailers opened the most new stores in the last two years, and what is the evidence for each?
-4. **Reuse Titan:** given memory, what is Titan's stated store-addition plan for the current fiscal year?
-5. List notable Indian jewellery or quick-commerce funding rounds since January this year (company, amount, investors, date). `not_found` is allowed per field.
-6. For a named company from Q3: current head of engineering / CTO, when they joined, where they worked before.
-7. **Disagreement:** two credible sources give different store counts for Malabar or Kalyan. Choose one. Justify. Do not report both and shrug.
-8. **Reuse + transfer:** using memory plus a small verify pass, which of {Titan, Kalyan, Q3 #1} is expanding faster, and what evidence would change your mind?
+1. Who is Titan Company's Managing Director in 2026? (kept)
+2. Who is the Infosys chief executive in 2026?
+3. **Hard / may fail:** two Indian IT firms with a published 2025–2026 headcount change (not a hiring target).
+4. **Reuse Infosys:** predecessor of the stored CEO, and the year the current CEO took over.
+5. Latest RBI repo rate and the 2026 MPC decision date.
+6. **Reuse Titan + cite a page:** confirm MD name and appointment date from an opened URL.
+7. **Hard / disagreement:** two different FY26/2026 India GDP figures from named institutions; choose one and why.
+8. **Reuse RBI + cite a page:** confirm the stored repo rate and MPC date from an opened URL.
+9. **Plant / likely miss:** Infosys headcount as stated in the latest RBI MPC press release (it should not be there).
 
 ---
 

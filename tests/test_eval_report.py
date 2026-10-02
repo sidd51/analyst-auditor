@@ -20,7 +20,7 @@ def test_locked_set_includes_q09_and_two_reuse() -> None:
     ]
     assert by_id("q04").reuse is True
     assert by_id("q06").reuse is True
-    assert by_id("q07").reuse is True
+    assert by_id("q07").reuse is False
     assert by_id("q08").reuse is True
     assert by_id("q09").plant_unsupported is True
     assert sum(1 for item in QUESTIONS if item.reuse) >= 2

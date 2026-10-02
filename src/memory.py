@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from src.config import Settings
@@ -27,7 +28,10 @@ CORROBORATION_MAP = {
 
 
 def entity_key(name: str) -> str:
-    return " ".join(name.casefold().split())
+    key = " ".join(name.casefold().split())
+    if key in {"rbi", "reserve bank"}:
+        return "reserve bank of india"
+    return key
 
 
 def entities_match(left: str, right: str) -> bool:
@@ -43,6 +47,8 @@ def mentioned_in_question(entity: str, question: str) -> bool:
     text = question.casefold()
     key = entity_key(entity)
     if key and key in text:
+        return True
+    if key == "reserve bank of india" and re.search(r"\brbi\b", text):
         return True
     head = key.split()[0] if key else ""
     return len(head) >= 4 and head in text

@@ -26,10 +26,12 @@ Rules:
   supplied in the user message. Do not invent a different today.
 - If a detail is not in the question or notes, leave it null or false.
 - Write a not_found_rule that says when a field must be reported missing.
-- If the question asks you to pick the latest figure, include both
-  chosen_figure_count and chosen_figure_reason as required fields.
-- A jewellery-brand or brand field must be the brand token only
-  (for example Tanishq, Mia, or CaratLane), not a job title or sentence.
+- Include chosen_figure_count and chosen_figure_reason ONLY when the
+  question asks you to choose one number among two or more competing
+  figures. Confirming a name, date, or title, or citing a page, is not
+  a chosen-figure task.
+- A brand field must be the brand token only (for example Finacle or Tanishq),
+  not a job title or sentence.
 - Do not invent extra research tasks.
 - Do not decide how many pages to fetch. Page limits are set in Python.
 """

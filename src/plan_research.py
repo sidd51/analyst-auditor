@@ -210,7 +210,14 @@ def _target_is_known(
         return True
     if set(key.split()) & MUST_SEARCH_WORDS:
         return False
-    if _canonical_field(key) in {"md_name", "md_date", "store_count"}:
+    if _canonical_field(key) in {
+        "md_name",
+        "md_date",
+        "store_count",
+        "ceo_title",
+        "repo_rate",
+        "decision_date",
+    }:
         target_canon = _canonical_field(key)
         if any(_canonical_field(item) == target_canon for item in known):
             return True
@@ -248,10 +255,25 @@ def _canonical_field(field: str) -> str:
         for word in ("predecessor", "successor", "brand", "retailer", "investor")
     ):
         return key
-    if "managing director" in key or key in {"md status", "md name", "full name"}:
+    if "managing director" in key or "chief executive" in key or key in {
+        "md status",
+        "md name",
+        "full name",
+        "ceo",
+        "ceo name",
+        "ceo_name",
+    }:
         return "md_name"
     if "appointment" in key or key in {"effective date", "effective appointment date"}:
         return "md_date"
+    if "title" in key and any(
+        word in key for word in ("chief executive", "managing director")
+    ):
+        return "ceo_title"
+    if "repo" in key:
+        return "repo_rate"
+    if "decision" in key and "date" in key:
+        return "decision_date"
     if "store" in key and any(
         word in key for word in ("count", "figure", "network", "number")
     ):

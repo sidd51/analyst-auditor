@@ -233,3 +233,40 @@ def test_ranking_name_row_becomes_its_own_entity() -> None:
         urls=["https://www.tradejini.com/blog"],
     )
     assert resolve_entity(jewellery_specified(), line) == "Malabar Gold & Diamonds"
+
+
+def test_rbi_alias_recalls_reserve_bank_facts(tmp_path: Path) -> None:
+    from src.memory import entities_match, mentioned_in_question
+    from src.models import MemoryFact, MemorySnapshot
+
+    assert entities_match("RBI", "Reserve Bank of India")
+    assert mentioned_in_question(
+        "Reserve Bank of India",
+        "Using stored RBI facts: confirm the repo rate.",
+    )
+    settings = valid_settings()
+    memory = EntityMemory(
+        tmp_path / "memory.json",
+        MemorySnapshot(
+            facts=[
+                MemoryFact(
+                    entity="Reserve Bank of India",
+                    field="repo_rate",
+                    text="5.25 percent",
+                    urls=["https://www.rbi.org.in/mpc"],
+                    as_of_date="2026-09-26",
+                )
+            ]
+        ),
+    )
+    specified = titan_specified().model_copy(
+        update={
+            "question": "Using stored RBI facts: confirm the repo rate.",
+            "specification": titan_specified().specification.model_copy(
+                update={"entities": ["RBI"]}
+            ),
+        }
+    )
+    recalled = memory.recall(specified)
+    assert recalled.known_fields == ["repo_rate"]
+

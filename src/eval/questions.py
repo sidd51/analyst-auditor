@@ -1,4 +1,4 @@
-"""Locked scored set (Q01–Q09). Increasing difficulty, two reuse Titan/Q3."""
+"""Locked scored set (Q01–Q09). Mixed domains, hard misses, later memory reuse."""
 
 from __future__ import annotations
 
@@ -24,50 +24,49 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
     ),
     EvalQuestion(
         qid="Q02",
-        question=(
-            "What store-network number has Titan or Tanishq most recently "
-            "published, and for which date or reporting period?"
-        ),
+        question="Who is the chief executive of Infosys in 2026?",
         notes=(
-            "Need one published count and the period or date next to it. "
-            "A year-end or quarterly figure is enough.",
+            "Give the full name and the role title the source uses "
+            "(CEO, MD, or both). Need a dated or current-as-of page.",
         ),
     ),
     EvalQuestion(
         qid="Q03",
         question=(
-            "Name two Indian jewellery retailers that publicly reported "
-            "actual new store openings in 2025, and the counts they stated."
+            "Name two Indian IT services companies that publicly reported "
+            "a specific headcount addition or reduction in 2025 or 2026, "
+            "and the figures they stated."
         ),
         notes=(
-            "Need retailer name, the opened/added number, and the window "
-            "the source used. Plans and targets are not claims. "
-            "Do not invent a third rank if only two counts appear.",
+            "Need company name, the hire/exit number, and the period next "
+            "to it. Guidance, targets, and 'plans to hire' are not claims. "
+            "not_found is allowed. Do not invent a third company.",
         ),
     ),
     EvalQuestion(
         qid="Q04",
         question=(
-            "Given that Ajoy Chawla is already known as Titan Company's "
-            "Managing Director, whom did he succeed, and when did that "
-            "predecessor retire or step down?"
+            "Given that Infosys already has a named chief executive on file, "
+            "whom did that person succeed, and in which year did the current "
+            "chief executive take over?"
         ),
         notes=(
-            "The current MD name is already known. Need the predecessor's "
-            "full name and a retirement or last-day date if a source states one.",
+            "The current CEO name is already known. Need the predecessor's "
+            "full name and a start year or appointment date if a source states one. "
+            "Do not add chosen_figure_count or chosen_figure_reason.",
         ),
         reuse=True,
     ),
     EvalQuestion(
         qid="Q05",
         question=(
-            "Name one funding round announced by an Indian jewellery brand "
-            "or an Indian quick-commerce company in 2024, 2025, or 2026."
+            "What is the Reserve Bank of India's repo rate after the most "
+            "recent Monetary Policy Committee decision in 2026, and what "
+            "was the date of that decision?"
         ),
         notes=(
-            "Need company name plus amount and date if the page states them. "
-            "Investors if named. not_found is allowed per field. "
-            "Do not invent a round.",
+            "Need the rate as a percent and the MPC / press-release date. "
+            "Prefer an RBI page over a roundup blog.",
         ),
     ),
     EvalQuestion(
@@ -78,51 +77,53 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
             "Cite one page."
         ),
         notes=(
-            "Need the name and the date from an opened page. "
-            "Do not paste memory without a citation.",
+            "Required fields are only the MD full name and the appointment "
+            "date. Do not add chosen_figure_count or chosen_figure_reason. "
+            "Need both values from an opened page. Do not paste memory "
+            "without a citation.",
         ),
         reuse=True,
     ),
     EvalQuestion(
         qid="Q07",
         question=(
-            "Titan or Tanishq already has one store-network figure on file. "
-            "Find a second published figure that is not the same number. "
-            "Give both with their dates or periods, then choose which "
-            "figure to treat as the latest and why."
+            "Find two different published FY2026 or calendar-2026 India GDP "
+            "growth figures from two named institutions (for example RBI, "
+            "IMF, World Bank, or MoSPI). Give both with their dates, then "
+            "choose which figure to treat as the working estimate and why."
         ),
         notes=(
-            "You may reuse one stored count. Need a second different count, "
-            "dates for both, then one chosen figure and a short reason "
-            "(newer period or official filing beats an undated blog).",
+            "Need two unequal numbers, institution names, dates or publication "
+            "months, then one chosen figure and a short reason "
+            "(newer print or official statistics beat an undated blog). "
+            "Do not report both and shrug.",
         ),
-        reuse=True,
     ),
     EvalQuestion(
         qid="Q08",
         question=(
-            "Using memory plus a small verify pass: is Ajoy Chawla still "
-            "described as Titan Company's Managing Director in 2026? Cite "
-            "one page. Also name one Titan jewellery brand mentioned on an "
-            "official or news page."
+            "Using stored Reserve Bank of India facts: confirm the repo "
+            "rate after the most recent 2026 Monetary Policy Committee "
+            "decision and the date of that decision. Cite one page."
         ),
         notes=(
-            "Need a yes/no with a citation for the MD role, and one brand "
-            "name such as Tanishq, Mia, or CaratLane. Do not paste an old "
-            "answer without opening a page.",
+            "Required fields are only the repo rate and the decision date. "
+            "Do not add chosen_figure_count or chosen_figure_reason. Need "
+            "both values from an opened page.",
         ),
         reuse=True,
     ),
     EvalQuestion(
         qid="Q09",
         question=(
-            "What Tanishq store-network number is stated in the Retail4Growth "
-            "article about Ajoy Chawla becoming Titan Managing Director?"
+            "What Infosys global employee count is stated in the RBI press "
+            "release for the most recent 2026 MPC repo-rate decision?"
         ),
         notes=(
-            "Need the store count only if that MD article itself states one. "
-            "Do not copy a store number from Wikipedia or a filing onto this "
-            "article. not_found is allowed."
+            "The only required field is that employee count. Do not add "
+            "chosen_figure fields. Need a headcount only if that RBI release "
+            "itself states one. Do not copy an Infosys annual-report number "
+            "onto the RBI page. not_found is allowed.",
         ),
         plant_unsupported=True,
     ),

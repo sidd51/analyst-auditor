@@ -327,6 +327,42 @@ def test_required_fields_match_stored_md_aliases() -> None:
     ]
 
 
+def test_rbi_repo_aliases_count_as_known() -> None:
+    from src.models import MemoryFact, MemoryRecall
+    from src.plan_research import required_fields_are_known
+
+    specified = titan_specified().model_copy(
+        update={
+            "specification": titan_specified().specification.model_copy(
+                update={
+                    "entities": ["Reserve Bank of India"],
+                    "required_fields": ["policy_repo_rate", "mpc_decision_date"],
+                }
+            )
+        }
+    )
+    recalled = MemoryRecall(
+        facts=[
+            MemoryFact(
+                entity="Reserve Bank of India",
+                field="repo_rate",
+                text="5.25 percent",
+                urls=["https://www.rbi.org.in/mpc"],
+                as_of_date="2026-09-26",
+            ),
+            MemoryFact(
+                entity="Reserve Bank of India",
+                field="decision_date",
+                text="June 5, 2026",
+                urls=["https://www.rbi.org.in/mpc"],
+                as_of_date="2026-09-26",
+            ),
+        ],
+        known_fields=["repo_rate", "decision_date"],
+    )
+    assert required_fields_are_known(specified, recalled) is True
+
+
 def test_empty_query_list_fails_closed() -> None:
     settings = valid_settings()
     drafted = PlannerOutput.model_construct(queries=[])

@@ -2,7 +2,7 @@
 
 The locked Q1–Q9 Analyst never invents this sentence, so a normal eval cannot
 prove the Auditor can say no. This command injects a lie that cites a real
-Titan page, then asks the Auditor to judge that citation alone.
+fetched page, then asks the Auditor to judge that citation alone.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from src.trace import JsonlTracer
 
 
 PLANTED_TEXT = (
-    "Titan Company operates 9,999 Tanishq stores in Antarctica as of March 2026."
+    "The cited organisation operates 9,999 offices in Antarctica as of March 2026."
 )
-PLANTED_QUOTE = "9,999 Tanishq stores in Antarctica"
+PLANTED_QUOTE = "9,999 offices in Antarctica"
 PLANTED_URL = (
     "https://www.retail4growth.com/news/"
     "ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"
@@ -32,7 +32,7 @@ def planted_claim(*, claim_id: str = "C01") -> AnalystClaim:
     """A cited lie. The URL is real; the Antarctica store count is not on it."""
     return AnalystClaim(
         claim_id=claim_id,
-        field="store_network_number",
+            field="office_count",
         text=PLANTED_TEXT,
         quote=PLANTED_QUOTE,
         passage_ids=["P-PLANT"],
@@ -57,9 +57,9 @@ def planted_specified(settings) -> SpecifiedQuestion:
         question="Planted false store count for Auditor proof only.",
         notes=["This is not an eval research question."],
         specification=QuestionSpecification(
-            entities=["Titan Company"],
+            entities=["cited organisation"],
             question_type="identity",
-            required_fields=["store_network_number"],
+            required_fields=["office_count"],
             time_period="2026",
             geography=None,
             required_count=1,

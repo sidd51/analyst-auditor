@@ -15,37 +15,39 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 
 ## Results (live eval, shared memory)
 
-Nine scored questions. Traces in `logs/`. Tables rebuilt with `python -m src.eval.report` (no API calls).
+Locked set in [`src/eval/questions.py`](src/eval/questions.py): 
+
+Q01 → Q06 is the Titan memory-verify pair. Q05 → Q08 is the RBI pair.
 
 
 |        | Cold Q01 | Memory-verify Q06 |
 | ------ | -------- | ----------------- |
-| Tokens | 5,173    | 3,051             |
-| Time   | 25.9s    | 7.9s              |
-| Cost   | ₹0.35    | ₹0.20             |
+| Tokens | 5,786    | 2,574             |
+| Time   | 22.1s    | 7.8s              |
+| Cost   | ₹0.35    | ₹0.19             |
 
-Q06 reopens 1–2 stored MD citation URLs.
+Q06 reopens stored MD citation URLs (no plan, search, or wave 2).
 
 
 |             | Naive Q01 [no tools]        | Loop Q01                |
 | ----------- | --------------------------- | ----------------------- |
 | Answer      | C.K. Venkataraman, Oct 2020 | Ajoy Chawla, 1 Jan 2026 |
-| Cost / time | ₹0.02 / 3s                  | ₹0.35 / 26s             |
+| Cost / time | ₹0.02 / 3s                  | ₹0.35 / 22s             |
 
 The additional cost buys a research/verification capability that the naive approach lacks.
 
 
-| Q   | complete | tokens | ₹    | sec    | memory facts | SUPPORTED | UNSUPPORTED | missing |
+| Q   | complete | tokens | ₹    | sec  | memory facts | SUPPORTED | UNSUPPORTED | missing |
 | --- | -------- | ------ | ---- | ---- | ------------ | --------- | ----------- | ------- |
-| Q01 | yes      | 5173   | 0.35 | 25.9 | 0            | 2         | 0           | 0       |
-| Q02 | yes      | 14182  | 0.86 | 167  | 2            | 4         | 0           | 0       |
-| Q03 | no       | 7822   | 0.39 | 20.5 | 0            | 0         | 0           | 3       |
-| Q04 | yes      | 7919   | 0.43 | 21.5 | 3            | 2         | 0           | 0       |
-| Q05 | yes      | 10839  | 0.59 | 24.6 | 0            | 4         | 0           | 0       |
-| Q06 | yes      | 3051   | 0.20 | 7.9  | 3            | 2         | 0           | 0       |
-| Q07 | no       | 3909   | 0.25 | 47.3 | 6            | 1         | 0           | 5       |
-| Q08 | yes      | 9356   | 0.58 | 24.9 | 5            | 4         | 0           | 0       |
-| Q09 | no       | 4022   | 0.22 | 50.4 | 8            | 0         | 1           | 2       |
+| Q01 | yes      | 5786   | 0.35 | 22.1 | 0            | 2         | 0           | 0       |
+| Q02 | no       | 6488   | 0.39 | 24.0 | 0            | 1         | 0           | 3       |
+| Q03 | yes      | 14634  | 0.84 | 30.2 | 0            | 6         | 0           | 0       |
+| Q04 | yes      | 7615   | 0.43 | 18.5 | 1            | 2         | 0           | 0       |
+| Q05 | yes      | 13245  | 0.77 | 40.1 | 0            | 4         | 0           | 0       |
+| Q06 | yes      | 2574   | 0.19 | 7.8  | 4            | 2         | 0           | 0       |
+| Q07 | no       | 17996  | 1.09 | 43.2 | 4            | 7         | 0           | 1       |
+| Q08 | yes      | 5650   | 0.30 | 11.5 | 8            | 2         | 0           | 0       |
+| Q09 | no       | 7549   | 0.34 | 18.7 | 3            | 0         | 1           | 4       |
 
 
 Full columns: `[reports/cost.md](reports/cost.md)`, `[reports/auditor.md](reports/auditor.md)`. Decisions and failures: `[WRITEUP.md](WRITEUP.md)`.
