@@ -40,7 +40,7 @@ The additional cost buys a research/verification capability that the naive appro
 | Q   | complete | tokens | ₹    | sec  | memory facts | SUPPORTED | UNSUPPORTED | missing |
 | --- | -------- | ------ | ---- | ---- | ------------ | --------- | ----------- | ------- |
 | Q01 | yes      | 5786   | 0.35 | 22.1 | 0            | 2         | 0           | 0       |
-| Q02 | no       | 6488   | 0.39 | 24.0 | 0            | 1         | 0           | 3       |
+| Q02 | yes      | 9425   | 0.46 | 21.6 | 3            | 2         | 0           | 0       |
 | Q03 | yes      | 14634  | 0.84 | 30.2 | 0            | 6         | 0           | 0       |
 | Q04 | yes      | 7615   | 0.43 | 18.5 | 1            | 2         | 0           | 0       |
 | Q05 | yes      | 13245  | 0.77 | 40.1 | 0            | 4         | 0           | 0       |

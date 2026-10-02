@@ -6,7 +6,7 @@ Memory is shared across the run. Caching a previous final answer does not happen
 | Q | ok | complete | tokens | ₹ | USD | seconds | memory facts used | queries skipped |
 |---|----|----------|--------|---|-----|---------|-------------------|-----------------|
 | Q01 | True | True | 5786 | 0.3521 | 0.003687 | 22.1 | 0 | 0 |
-| Q02 | True | False | 6488 | 0.3924 | 0.004109 | 24.0 | 0 | 0 |
+| Q02 | True | True | 9425 | 0.4646 | 0.004865 | 21.6 | 3 | 1 |
 | Q03 | True | True | 14634 | 0.8435 | 0.008832 | 30.2 | 0 | 0 |
 | Q04 | True | True | 7615 | 0.4279 | 0.004480 | 18.5 | 1 | 1 |
 | Q05 | True | True | 13245 | 0.7700 | 0.008063 | 40.1 | 0 | 0 |

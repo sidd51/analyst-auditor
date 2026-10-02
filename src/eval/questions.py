@@ -24,10 +24,15 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
     ),
     EvalQuestion(
         qid="Q02",
-        question="Who is the chief executive of Infosys in 2026?",
+        question=(
+            "Who is Infosys's chief executive in office in 2026, and in "
+            "which city is the company headquartered?"
+        ),
         notes=(
-            "Give the full name and the role title the source uses "
-            "(CEO, MD, or both). Need a dated or current-as-of page.",
+            "Need the incumbent's full name (the person holding CEO/MD "
+            "during 2026, not a successor named to take over later) and "
+            "the headquarters city. Do not add chosen_figure_count or "
+            "chosen_figure_reason.",
         ),
     ),
     EvalQuestion(

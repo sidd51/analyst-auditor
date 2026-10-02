@@ -94,7 +94,7 @@ Assignment says: solve one properly rather than four loosely.
 Increasing difficulty. Mixed industries. At least two reuse. One planted unsupported.
 
 1. Who is Titan Company's Managing Director in 2026? (kept)
-2. Who is the Infosys chief executive in 2026?
+2. Who is Infosys's chief executive in office in 2026, and in which city is the company headquartered?
 3. **Hard / may fail:** two Indian IT firms with a published 2025–2026 headcount change (not a hiring target).
 4. **Reuse Infosys:** predecessor of the stored CEO, and the year the current CEO took over.
 5. Latest RBI repo rate and the 2026 MPC decision date.
