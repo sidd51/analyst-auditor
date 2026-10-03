@@ -68,9 +68,21 @@ def write_reports(root: Path) -> None:
     rows = [question_row(root, item.qid) for item in QUESTIONS]
     reports = root / "reports"
     reports.mkdir(parents=True, exist_ok=True)
-    (reports / "cost.md").write_text(_cost_markdown(rows), encoding="utf-8")
+    (reports / "cost.md").write_text(_cost_markdown(rows, root), encoding="utf-8")
     (reports / "auditor.md").write_text(_auditor_markdown(rows), encoding="utf-8")
     write_eval_page(root, rows)
+
+
+def _unique_urls(values) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        url = str(value or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
 
 
 def compact_trace(events: list[dict]) -> dict:
@@ -125,6 +137,8 @@ def compact_trace(events: list[dict]) -> dict:
                 "claim_id": item.get("claim_id") or "",
                 "field": item.get("field") or "",
                 "text": item.get("text") or "",
+                "quote": item.get("quote") or "",
+                "urls": [url for url in (item.get("urls") or []) if url][:3],
             }
             for item in (analyst.get("claims") or [])[:6]
         ],
@@ -139,6 +153,8 @@ def compact_trace(events: list[dict]) -> dict:
             {
                 "claim_id": planted.get("claim_id"),
                 "text": planted.get("text"),
+                "quote": planted.get("quote") or "",
+                "urls": [url for url in (planted.get("urls") or []) if url][:3],
             }
             if planted
             else None
@@ -148,34 +164,47 @@ def compact_trace(events: list[dict]) -> dict:
             {
                 "claim_id": item.get("claim_id") or "",
                 "status": item.get("status") or "",
-                "reason": (item.get("reason") or "")[:220],
+                "reason": item.get("reason") or "",
                 "independent_url": item.get("independent_url") or "",
                 "evidence_origin": item.get("evidence_origin") or "",
             }
-            for item in (cross.get("verdicts") or [])[:6]
+            for item in (cross.get("verdicts") or [])
         ],
         "auditor": [
             {
                 "claim_id": item.get("claim_id") or "",
                 "verdict": item.get("verdict") or "",
-                "reason": (item.get("reason") or "")[:220],
+                "reason": item.get("reason") or "",
+                "urls": _unique_urls(
+                    note.get("url") for note in (item.get("source_notes") or [])
+                ),
             }
-            for item in (audit.get("verdicts") or [])[:6]
+            for item in (audit.get("verdicts") or [])
         ],
         "accepted": [
             {
                 "field": item.get("field") or "",
                 "text": item.get("text") or "",
                 "sources": item.get("sources") or [],
+                "urls": _unique_urls(item.get("urls") or []),
             }
-            for item in (final.get("accepted") or [])[:6]
+            for item in (final.get("accepted") or [])
         ],
         "missing": [
             {
                 "field": item.get("field") or "",
-                "reason": (item.get("reason") or "")[:160],
+                "reason": item.get("reason") or "",
             }
-            for item in (final.get("missing") or [])[:6]
+            for item in (final.get("missing") or [])
+        ],
+        "disputed": [
+            {
+                "field": item.get("field") or "",
+                "claim_id": item.get("claim_id") or "",
+                "reason": item.get("reason") or "",
+                "urls": _unique_urls(item.get("urls") or []),
+            }
+            for item in (final.get("disputed") or [])
         ],
         "complete": bool(final.get("complete")),
     }
@@ -200,10 +229,26 @@ def _pct_drop(before: float, after: float) -> int | None:
     return round((1 - after / before) * 100)
 
 
+def _memory_verify(root: Path, qid: str) -> bool:
+    events = load_events(root / "logs" / f"{qid.lower()}-analyst.jsonl")
+    return bool((last_event(events, "memory_recall") or {}).get("memory_verify"))
+
+
+def cold_warm_pair(root: Path, rows: list[dict]) -> tuple[dict, dict, str, str]:
+    """Use a full-search question vs its memory-verify twin, not a re-run of Q01."""
+    by_qid = {row["qid"]: row for row in rows}
+    for cold_id, warm_id in (("Q01", "Q06"), ("Q05", "Q08")):
+        cold = by_qid.get(cold_id) or {}
+        warm = by_qid.get(warm_id) or {}
+        if not cold.get("present") or not warm.get("present"):
+            continue
+        if not _memory_verify(root, cold_id) and _memory_verify(root, warm_id):
+            return cold, warm, cold_id, warm_id
+    return by_qid.get("Q01") or {}, by_qid.get("Q06") or {}, "Q01", "Q06"
+
+
 def eval_page_data(root: Path, rows: list[dict]) -> dict:
-    by_id = {row["qid"]: row for row in rows}
-    cold = by_id.get("Q01") or {}
-    warm = by_id.get("Q06") or {}
+    cold, warm, cold_id, warm_id = cold_warm_pair(root, rows)
     questions = {item.qid: item for item in QUESTIONS}
     detail = []
     for row in rows:
@@ -232,6 +277,8 @@ def eval_page_data(root: Path, rows: list[dict]) -> dict:
                 float(cold.get("wall_seconds") or 0),
                 float(warm.get("wall_seconds") or 0),
             ),
+            "cold_qid": cold_id,
+            "warm_qid": warm_id,
             "q01_tokens": int(cold.get("tokens") or 0),
             "q06_tokens": int(warm.get("tokens") or 0),
             "q01_cost_inr": float(cold.get("cost_inr") or 0),
@@ -253,7 +300,7 @@ def write_eval_page(root: Path, rows: list[dict]) -> Path:
     return out
 
 
-def _cost_markdown(rows: list[dict]) -> str:
+def _cost_markdown(rows: list[dict], root: Path | None = None) -> str:
     lines = [
         "# Cost by question",
         "",
@@ -273,23 +320,20 @@ def _cost_markdown(rows: list[dict]) -> str:
                 **row
             )
         )
-    present = [row for row in rows if row["present"] and row["ok"]]
-    if present:
-        first = present[0]
-        last = present[-1]
-        drop = (
-            (1 - last["cost_inr"] / first["cost_inr"]) * 100
-            if first["cost_inr"]
-            else 0
-        )
-        lines.extend(
-            [
-                "",
-                f"First scored question: {first['qid']} ₹{first['cost_inr']:.4f}.",
-                f"Last scored question: {last['qid']} ₹{last['cost_inr']:.4f} "
-                f"({drop:.0f}% vs first).",
-            ]
-        )
+    if root is not None:
+        cold, warm, cold_id, warm_id = cold_warm_pair(root, rows)
+        if cold.get("present") and warm.get("present") and cold.get("cost_inr"):
+            drop = _pct_drop(float(cold["cost_inr"]), float(warm["cost_inr"]))
+            extra = f" (−{drop}%)." if drop is not None and drop >= 0 else "."
+            if drop is not None and drop < 0:
+                extra = f" (+{abs(drop)}%)."
+            lines.extend(
+                [
+                    "",
+                    f"Memory pair: cold {cold_id} ₹{cold['cost_inr']:.4f} → "
+                    f"verify {warm_id} ₹{warm['cost_inr']:.4f}{extra}",
+                ]
+            )
     return "\n".join(lines) + "\n"
 
 

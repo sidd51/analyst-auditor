@@ -1,7 +1,8 @@
 # Analyst&Auditor
 ### Evidence-gated web research agent
-Analyst- An agent that answers open research questions requiring evidence gathered from the live web.
-Auditor- A second agent that takes an analyst answer and independently verifies.
+
+**Analyst** — produces citation-backed research answers from the live web.
+**Auditor** — independently re-verifies those answers against the cited sources so rubber-stamped claims do not ship.
 
 ## Features
 
@@ -18,6 +19,7 @@ Auditor- A second agent that takes an analyst answer and independently verifies.
 Locked set in [`src/eval/questions.py`](src/eval/questions.py): 
 
 Q01 → Q06 is the Titan memory-verify pair. Q05 → Q08 is the RBI pair.
+The eval screen compares a **cold full search** to its **memory-verify twin**.
 
 
 |        | Cold Q01 | Memory-verify Q06 |
@@ -37,17 +39,17 @@ Q06 reopens stored MD citation URLs (no plan, search, or wave 2).
 The additional cost buys a research/verification capability that the naive approach lacks.
 
 
-| Q   | complete | tokens | ₹    | sec  | memory facts | SUPPORTED | UNSUPPORTED | missing |
-| --- | -------- | ------ | ---- | ---- | ------------ | --------- | ----------- | ------- |
-| Q01 | yes      | 5786   | 0.35 | 22.1 | 0            | 2         | 0           | 0       |
-| Q02 | yes      | 9425   | 0.46 | 21.6 | 3            | 2         | 0           | 0       |
-| Q03 | yes      | 14634  | 0.84 | 30.2 | 0            | 6         | 0           | 0       |
-| Q04 | yes      | 7615   | 0.43 | 18.5 | 1            | 2         | 0           | 0       |
-| Q05 | yes      | 13245  | 0.77 | 40.1 | 0            | 4         | 0           | 0       |
-| Q06 | yes      | 2574   | 0.19 | 7.8  | 4            | 2         | 0           | 0       |
-| Q07 | no       | 17996  | 1.09 | 43.2 | 4            | 7         | 0           | 1       |
-| Q08 | yes      | 5650   | 0.30 | 11.5 | 8            | 2         | 0           | 0       |
-| Q09 | no       | 7549   | 0.34 | 18.7 | 3            | 0         | 1           | 4       |
+| Q   | complete | tokens | ₹    | sec   | memory facts | SUPPORTED | UNSUPPORTED | missing |
+| --- | -------- | ------ | ---- | ----- | ------------ | --------- | ----------- | ------- |
+| Q01 | yes      | 5786   | 0.35 | 22.1  | 0            | 2         | 0           | 0       |
+| Q02 | no       | 9871   | 0.47 | 150.7 | 0            | 1         | 0           | 1       |
+| Q03 | yes      | 14055  | 0.75 | 24.8  | 0            | 6         | 0           | 0       |
+| Q04 | yes      | 7615   | 0.43 | 18.5  | 1            | 2         | 0           | 0       |
+| Q05 | yes      | 13245  | 0.77 | 40.1  | 0            | 4         | 0           | 0       |
+| Q06 | yes      | 2574   | 0.19 | 7.8   | 4            | 2         | 0           | 0       |
+| Q07 | no       | 17996  | 1.09 | 43.2  | 4            | 7         | 0           | 1       |
+| Q08 | yes      | 5650   | 0.30 | 11.5  | 8            | 2         | 0           | 0       |
+| Q09 | no       | 11987  | 0.51 | 27.5  | 8            | 0         | 1           | 1       |
 
 
 Full columns: `[reports/cost.md](reports/cost.md)`, `[reports/auditor.md](reports/auditor.md)`. Decisions and failures: `[WRITEUP.md](WRITEUP.md)`.

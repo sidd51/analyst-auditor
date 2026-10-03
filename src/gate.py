@@ -96,13 +96,23 @@ def close_answer(
             )
         )
 
-    accepted, extra_disputed = collapse_duplicate_fields(accepted, cross_check)
+    accepted, extra_disputed = collapse_duplicate_fields(
+        accepted,
+        cross_check,
+        keep_parallel_rows=_asks_for_multiple(specified.specification),
+    )
     disputed.extend(extra_disputed)
     covered = {_key(item.field) for item in accepted}
-    missing = _missing_fields(specified, analyst.unanswered, covered, rejected_missing)
+    disputed_keys = {_key(item.field) for item in disputed}
+    missing = _missing_fields(
+        specified,
+        analyst.unanswered,
+        covered | disputed_keys,
+        rejected_missing,
+    )
     unresolved = [item for item in disputed if _key(item.field) not in covered]
     complete = not missing and not unresolved and _rank_is_filled(specified, accepted)
-    if not complete and specified.specification.ranking:
+    if not complete and _asks_for_multiple(specified.specification):
         missing = _ensure_rank_missing(specified, accepted, missing)
 
     return FinalAnswer(
@@ -116,8 +126,12 @@ def close_answer(
 def collapse_duplicate_fields(
     accepted: list[AnswerLine],
     cross_check: CrossCheckReport | None,
+    *,
+    keep_parallel_rows: bool = False,
 ) -> tuple[list[AnswerLine], list[DisputedLine]]:
     """If two verified claims disagree on one field, keep the better-backed one."""
+    if keep_parallel_rows:
+        return accepted, []
     ranks = {
         item.claim_id: CORROBORATION_RANK.get(item.status, 0)
         for item in (cross_check.verdicts if cross_check else [])
@@ -233,9 +247,16 @@ def _missing_fields(
     return missing
 
 
+def _asks_for_multiple(spec) -> bool:
+    """Name-N and ranking questions keep one row per result, not one value per field."""
+    return bool(
+        spec.ranking or spec.comparison or (spec.required_count or 0) >= 2
+    )
+
+
 def _rank_is_filled(specified: SpecifiedQuestion, accepted: list[AnswerLine]) -> bool:
     spec = specified.specification
-    if not spec.ranking or not spec.required_count:
+    if not spec.required_count or not _asks_for_multiple(spec):
         return True
     return _ranked_row_count(accepted) >= spec.required_count
 
@@ -246,7 +267,7 @@ def _ensure_rank_missing(
     missing: list[MissingLine],
 ) -> list[MissingLine]:
     spec = specified.specification
-    if not spec.ranking or not spec.required_count:
+    if not spec.required_count:
         return missing
     if _rank_is_filled(specified, accepted):
         return missing

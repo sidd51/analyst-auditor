@@ -325,6 +325,9 @@ def test_required_fields_match_stored_md_aliases() -> None:
         "https://dess.digital/ajoy-chawla/",
         "https://economictimes.indiatimes.com/titan",
     ]
+    from src.plan_research import should_memory_verify
+
+    assert should_memory_verify(specified, recalled) is True
 
 
 def test_rbi_repo_aliases_count_as_known() -> None:
@@ -361,6 +364,71 @@ def test_rbi_repo_aliases_count_as_known() -> None:
         known_fields=["repo_rate", "decision_date"],
     )
     assert required_fields_are_known(specified, recalled) is True
+
+
+def test_memory_verify_blocked_on_comparison_even_when_fields_are_known() -> None:
+    from src.models import MemoryFact, MemoryRecall
+    from src.plan_research import should_memory_verify
+
+    specified = titan_specified().model_copy(
+        update={
+            "question": (
+                "Among TCS, Infosys, and HCLTech, which reported the "
+                "highest FY26 consolidated revenue?"
+            ),
+            "specification": titan_specified().specification.model_copy(
+                update={
+                    "entities": ["TCS", "Infosys", "HCLTech"],
+                    "question_type": "multi_field",
+                    "required_fields": ["highest revenue company", "highest revenue"],
+                    "ranking": False,
+                    "comparison": False,
+                }
+            ),
+        }
+    )
+    recalled = MemoryRecall(
+        facts=[
+            MemoryFact(
+                entity="TCS",
+                field="FY26 revenue",
+                text="267000 crore",
+                urls=["https://economictimes.indiatimes.com/it"],
+                as_of_date="2026-09-26",
+            )
+        ],
+        known_fields=["highest revenue company", "highest revenue"],
+        known_facts=["TCS / FY26 revenue: 267000 crore"],
+    )
+    assert should_memory_verify(specified, recalled) is False
+
+
+def test_memory_verify_blocked_on_ranking_name_n() -> None:
+    from src.models import MemoryRecall
+    from src.plan_research import should_memory_verify
+
+    specified = titan_specified().model_copy(
+        update={
+            "question": (
+                "Name the three Indian IT companies with the highest "
+                "FY26 consolidated revenue, in rank order."
+            ),
+            "specification": titan_specified().specification.model_copy(
+                update={
+                    "question_type": "ranking",
+                    "required_fields": ["company name", "FY26 revenue"],
+                    "required_count": 3,
+                    "ranking": True,
+                }
+            ),
+        }
+    )
+    recalled = MemoryRecall(
+        facts=[],
+        known_fields=["company name", "FY26 revenue"],
+        known_facts=["TCS / FY26 revenue: 267000 crore"],
+    )
+    assert should_memory_verify(specified, recalled) is False
 
 
 def test_empty_query_list_fails_closed() -> None:

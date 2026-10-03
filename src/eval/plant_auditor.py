@@ -19,20 +19,21 @@ from src.trace import JsonlTracer
 
 
 PLANTED_TEXT = (
-    "The cited organisation operates 9,999 offices in Antarctica as of March 2026."
+    "Infosys has 9,999,999 global employees as of March 2026."
 )
-PLANTED_QUOTE = "9,999 offices in Antarctica"
+PLANTED_QUOTE = "9,999,999 global employees"
+PLANTED_FIELD = "employee count"
 PLANTED_URL = (
     "https://www.retail4growth.com/news/"
     "ajoy-chawla-takes-charge-as-managing-director-at-titan-company-limited-7699"
 )
 
 
-def planted_claim(*, claim_id: str = "C01") -> AnalystClaim:
-    """A cited lie. The URL is real; the Antarctica store count is not on it."""
+def planted_claim(*, claim_id: str = "C01", field: str = PLANTED_FIELD) -> AnalystClaim:
+    """A cited lie. The URL is real; that employee count is not on it."""
     return AnalystClaim(
         claim_id=claim_id,
-            field="office_count",
+        field=field,
         text=PLANTED_TEXT,
         quote=PLANTED_QUOTE,
         passage_ids=["P-PLANT"],
@@ -41,25 +42,30 @@ def planted_claim(*, claim_id: str = "C01") -> AnalystClaim:
     )
 
 
-def trap_claim_for_pages(pages: list, *, claim_id: str = "C99") -> AnalystClaim:
-    """False store count citing a page we actually opened (or the MD article)."""
+def trap_claim_for_pages(
+    pages: list,
+    *,
+    claim_id: str = "C99",
+    field: str = PLANTED_FIELD,
+) -> AnalystClaim:
+    """False employee count citing a page we actually opened."""
     url = PLANTED_URL
     for page in pages:
         candidate = getattr(page, "final_url", None) or getattr(page, "url", "")
         if getattr(page, "ok", False) and candidate:
             url = candidate
             break
-    return planted_claim(claim_id=claim_id).model_copy(update={"urls": [url]})
+    return planted_claim(claim_id=claim_id, field=field).model_copy(update={"urls": [url]})
 
 
 def planted_specified(settings) -> SpecifiedQuestion:
     return SpecifiedQuestion(
-        question="Planted false store count for Auditor proof only.",
+        question="Planted false employee count for Auditor proof only.",
         notes=["This is not an eval research question."],
         specification=QuestionSpecification(
             entities=["cited organisation"],
             question_type="identity",
-            required_fields=["office_count"],
+            required_fields=["employee count"],
             time_period="2026",
             geography=None,
             required_count=1,
@@ -92,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         "plant_start",
         claim=claim.text,
         url=PLANTED_URL,
-        note="False store count on a real MD article.",
+        note="False employee count on a real opened page.",
     )
     result = audit_claims(
         [claim],

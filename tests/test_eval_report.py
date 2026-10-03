@@ -32,9 +32,16 @@ def test_report_writer_fills_tables_from_traces(tmp_path: Path) -> None:
     (logs / "q01-analyst.jsonl").write_text(
         "\n".join(
             [
-                '{"event":"final_answer","complete":true,"accepted":[{"claim_id":"C01"}],'
-                '"missing":[],"disputed":[]}',
-                '{"event":"audit_report","verdicts":[{"verdict":"SUPPORTED"},'
+                '{"event":"analyst_result","claims":[{"claim_id":"C01","field":"name",'
+                '"text":"Ajoy Chawla","quote":"appointed as Managing Director",'
+                '"urls":["https://example.com/titan"]}]}',
+                '{"event":"final_answer","complete":true,"accepted":[{"claim_id":"C01",'
+                '"field":"name","text":"Ajoy Chawla",'
+                '"urls":["https://example.com/titan"]}],"missing":[],"disputed":[]}',
+                '{"event":"audit_report","verdicts":[{"claim_id":"C01","verdict":"SUPPORTED",'
+                '"reason":"The claim states the repo rate was 5.25% after the June 2026 '
+                'Monetary Policy Committee decision and chose to hold.",'
+                '"source_notes":[{"url":"https://example.com/rbi"}]},'
                 '{"verdict":"UNSUPPORTED"}]}',
                 '{"event":"memory_write","recalled_facts":[],"skipped_queries":[]}',
                 '{"event":"run_end","ok":true,"complete":true,"total_tokens":1000,'
@@ -56,3 +63,8 @@ def test_report_writer_fills_tables_from_traces(tmp_path: Path) -> None:
     assert "Q01" in page
     assert "const DATA =" in page
     assert "Cross Check" in page
+    assert "appointed as Managing Director" in page
+    assert "example.com/titan" in page
+    assert "chose to hold" in page
+    assert "example.com/rbi" in page
+    assert "cold_qid" in page

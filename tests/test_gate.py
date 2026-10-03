@@ -176,6 +176,7 @@ def test_contradicted_claim_goes_to_disputed() -> None:
     assert answer.complete is False
     assert [item.claim_id for item in answer.accepted] == ["C01"]
     assert answer.disputed[0].claim_id == "C02"
+    assert all(item.field != answer.disputed[0].field for item in answer.missing)
     rendered = render_answer(answer)
     assert "Disputed" in rendered
     assert "Cited page says April 2026." in rendered
@@ -303,3 +304,103 @@ def test_ranking_shortfall_is_incomplete() -> None:
     assert answer.complete is False
     assert any(item.field == "ranking" for item in answer.missing)
     assert render_answer(answer).startswith("Answer (incomplete)")
+
+
+def test_name_two_companies_keeps_both_rows() -> None:
+    settings = valid_settings()
+    specified = SpecifiedQuestion(
+        question="Name two Indian IT companies and their headcount change.",
+        notes=[],
+        specification=QuestionSpecification(
+            entities=["Indian IT services companies"],
+            question_type="multi_field",
+            required_fields=["company name", "headcount change number"],
+            time_period="2026",
+            geography="India",
+            required_count=2,
+            ranking=False,
+            comparison=False,
+            exhaustive=False,
+            constraints=[],
+            not_found_rule="not_found is allowed.",
+        ),
+        page_policy=page_policy_from_settings(settings),
+        as_of_date="2026-09-26",
+        resolved_time_period="2026",
+    )
+    answer = close_answer(
+        specified,
+        analyst(
+            claim(claim_id="C01", field="company name", text="Wipro", urls=["https://et.com/a"]),
+            claim(claim_id="C02", field="headcount change number", text="7,500", urls=["https://et.com/a"]),
+            claim(claim_id="C03", field="company name", text="TCS", urls=["https://et.com/a"]),
+            claim(
+                claim_id="C04",
+                field="headcount change number",
+                text="-23,460",
+                urls=["https://et.com/a"],
+            ),
+        ),
+        audit(
+            ("C01", "SUPPORTED", "Wipro is on the page."),
+            ("C02", "SUPPORTED", "7500 is on the page."),
+            ("C03", "SUPPORTED", "TCS is on the page."),
+            ("C04", "SUPPORTED", "23460 is on the page."),
+        ),
+        CrossCheckReport(
+            verdicts=[
+                CrossCheckVerdict(claim_id="C01", status="single_source"),
+                CrossCheckVerdict(claim_id="C03", status="corroborated"),
+            ]
+        ),
+    )
+    names = [item.text for item in answer.accepted if item.field == "company name"]
+    assert names == ["Wipro", "TCS"]
+    assert answer.disputed == []
+    assert answer.complete is True
+
+
+def test_comparison_keeps_both_winner_rows() -> None:
+    settings = valid_settings()
+    specified = SpecifiedQuestion(
+        question=(
+            "Which company had the highest FY26 revenue, and which had "
+            "the highest FY26 growth rate?"
+        ),
+        notes=[],
+        specification=QuestionSpecification(
+            entities=["TCS", "HCLTech"],
+            question_type="comparison",
+            required_fields=["company name", "FY26 revenue", "FY26 growth"],
+            time_period="FY26",
+            geography="India",
+            required_count=None,
+            ranking=False,
+            comparison=True,
+            exhaustive=False,
+            constraints=[],
+            not_found_rule="not_found is allowed.",
+        ),
+        page_policy=page_policy_from_settings(settings),
+        as_of_date="2026-09-26",
+        resolved_time_period="FY26",
+    )
+    answer = close_answer(
+        specified,
+        analyst(
+            claim(claim_id="C01", field="company name", text="TCS", urls=["https://et.com/a"]),
+            claim(claim_id="C02", field="FY26 revenue", text="267000", urls=["https://et.com/a"]),
+            claim(claim_id="C03", field="company name", text="HCLTech", urls=["https://et.com/a"]),
+            claim(claim_id="C04", field="FY26 growth", text="11.18%", urls=["https://et.com/a"]),
+        ),
+        audit(
+            ("C01", "SUPPORTED", "TCS is on the page."),
+            ("C02", "SUPPORTED", "Revenue is on the page."),
+            ("C03", "SUPPORTED", "HCLTech is on the page."),
+            ("C04", "SUPPORTED", "Growth is on the page."),
+        ),
+        CrossCheckReport(verdicts=[]),
+    )
+    names = [item.text for item in answer.accepted if item.field == "company name"]
+    assert names == ["TCS", "HCLTech"]
+    assert answer.complete is True

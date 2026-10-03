@@ -294,7 +294,7 @@ def test_planted_wrong_claim_is_unsupported(tmp_path: Path) -> None:
                     claim_id="C01",
                     source_id="S01",
                     support="silent",
-                    reason="The page is about an MD appointment, not Antarctica stores.",
+                    reason="The page is about an MD appointment, not an employee count.",
                 )
             ]
         ),
@@ -303,7 +303,7 @@ def test_planted_wrong_claim_is_unsupported(tmp_path: Path) -> None:
     assert result.value.verdicts[0].verdict == "UNSUPPORTED"
     assert llm.calls == 1
     assert PLANTED_TEXT in llm.user_prompt
-    assert "Antarctica" in llm.user_prompt
+    assert "9,999,999" in llm.user_prompt
     assert "Do not treat an analyst quote as proof" in llm.system_prompt
 
 
@@ -323,4 +323,5 @@ def test_trap_claim_uses_opened_page_url() -> None:
     trap = trap_claim_for_pages([page], claim_id="C02")
     assert trap.claim_id == "C02"
     assert trap.urls == ["https://example.com/md"]
-    assert "Antarctica" in trap.text
+    assert trap.field == "employee count"
+    assert "9,999,999" in trap.text

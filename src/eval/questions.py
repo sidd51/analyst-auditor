@@ -38,14 +38,13 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
     EvalQuestion(
         qid="Q03",
         question=(
-            "Name two Indian IT services companies that publicly reported "
-            "a specific headcount addition or reduction in 2025 or 2026, "
-            "and the figures they stated."
+            "Name the three Indian IT companies with the highest FY26 "
+            "consolidated revenue, in rank order, and give each company's "
+            "FY26 revenue in rupees crore."
         ),
         notes=(
-            "Need company name, the hire/exit number, and the period next "
-            "to it. Guidance, targets, and 'plans to hire' are not claims. "
-            "not_found is allowed. Do not invent a third company.",
+            "Need three companies and each FY26 consolidated revenue in "
+            "rupees crore, in rank order. Parallel rows, same field labels.",
         ),
     ),
     EvalQuestion(
@@ -70,7 +69,8 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
             "was the date of that decision?"
         ),
         notes=(
-            "Need the rate as a percent and the MPC / press-release date. "
+            "Required fields are only the repo rate and the decision date. "
+            "Do not add chosen_figure_count or chosen_figure_reason. "
             "Prefer an RBI page over a roundup blog.",
         ),
     ),
@@ -83,7 +83,8 @@ QUESTIONS: tuple[EvalQuestion, ...] = (
         ),
         notes=(
             "Required fields are only the MD full name and the appointment "
-            "date. Do not add chosen_figure_count or chosen_figure_reason. "
+            "date. Do not add chosen_figure_count, chosen_figure_reason, "
+            "or a citation field. URLs on those two claims are the cite. "
             "Need both values from an opened page. Do not paste memory "
             "without a citation.",
         ),

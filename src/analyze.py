@@ -35,7 +35,7 @@ from src.plan_research import (
     asks_to_cite_a_page,
     memory_verify_urls,
     plan_research,
-    required_fields_are_known,
+    should_memory_verify,
 )
 from src.quotes import quote_appears
 from src.specify import specify_question
@@ -54,6 +54,9 @@ Rules:
 - If a required field or requested rank is not supported, list it under
   unanswered with a short reason. Do not invent a value.
 - Do not force a top-N ranking. Return only the rows the passages support.
+- If comparison is true, emit only the winning row(s) using the required
+  winner field labels. A table of all candidates is not the answer unless
+  the question asked to name all.
 - A single in-window "opened" or "added" number is still a claim even if
   you cannot complete the full ranking or requested count.
 - Write at most three short notes. Notes may mention plans. Notes are not claims.
@@ -356,6 +359,7 @@ def analyze_evidence(
         f"Geography: {spec.geography or 'not specified'}\n"
         f"Required count: {spec.required_count or 'not specified'}\n"
         f"Ranking: {spec.ranking}\n"
+        f"Comparison: {spec.comparison}\n"
         f"Not-found rule: {spec.not_found_rule}\n\n"
         f"Evidence passages:\n{passage_block}\n"
     )
@@ -420,9 +424,7 @@ def run_question(
         limit=settings.max_memory_prompt_items,
     )
     stored_urls = memory_verify_urls(specified.value, recalled.facts)
-    memory_verify = bool(
-        required_fields_are_known(specified.value, recalled) and stored_urls
-    )
+    memory_verify = should_memory_verify(specified.value, recalled)
     tracer.event(
         "memory_recall",
         known_fields=recalled.known_fields,
@@ -502,14 +504,25 @@ def run_question(
     if plant_unsupported:
         from src.eval.plant_auditor import trap_claim_for_pages
 
+        required = specified.value.specification.required_fields
+        trap_field = next(
+            (
+                field
+                for field in required
+                if "employee" in field.casefold() or "headcount" in field.casefold()
+            ),
+            required[0] if required else "employee count",
+        )
         trap = trap_claim_for_pages(
             packet.fetched.pages,
             claim_id=f"C{len(analyzed.value.claims) + 1:02d}",
+            field=trap_field,
         )
         tracer.event(
             "planted_claim",
             claim_id=trap.claim_id,
             text=trap.text,
+            quote=trap.quote,
             urls=list(trap.urls),
         )
         analyzed = StructuredResult(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 from src.config import Settings, load_settings
@@ -22,6 +23,10 @@ Rules:
 - List every required answer field as a short label a later checker can use.
 - Capture time period, geography, requested count, ranking, comparison, and
   exhaustive-list wording when they are present.
+- If the question asks to name N companies or list N results, set
+  required_count to N. Reuse the same field labels on each row
+  (company name, figure, period). Those are parallel answers, not one
+  field with two competing values.
 - Interpret relative periods such as "last two years" against the as-of date
   supplied in the user message. Do not invent a different today.
 - If a detail is not in the question or notes, leave it null or false.
@@ -30,11 +35,159 @@ Rules:
   question asks you to choose one number among two or more competing
   figures. Confirming a name, date, or title, or citing a page, is not
   a chosen-figure task.
+- If the question asks which / highest / lowest / versus on a metric,
+  this is a comparison, not a ranking. Required fields are the winner
+  identity and the winning figure for each metric. Do not list every
+  candidate's stats as required fields.
+- If the question asks to name N results in rank order, that is a
+  ranking. Keep parallel rows for all N. Do not collapse it to one winner.
 - A brand field must be the brand token only (for example Finacle or Tanishq),
   not a job title or sentence.
+- "Cite one page" is not a required field named citation. The later
+  claims already carry URLs.
 - Do not invent extra research tasks.
 - Do not decide how many pages to fetch. Page limits are set in Python.
 """
+
+_CHOSEN_FIELDS = {"chosen_figure_count", "chosen_figure_reason"}
+_CHOOSE_ONE = re.compile(
+    r"\b(?:choose (?:which|one|among)|working estimate|chosen figure)\b",
+    re.I,
+)
+_NAME_N = re.compile(
+    r"\b(?:name the|list the|in rank order|rank order|top\s+\d)\b",
+    re.I,
+)
+_WHICH_WINS = re.compile(
+    r"\b(?:highest|lowest|versus|\bvs\.?\b|compar(?:e|ed|ison)|"
+    r"which (?:of|reported|had|has)|larger|smaller|faster)\b",
+    re.I,
+)
+
+
+def _field_key(field: str) -> str:
+    return field.strip().casefold().replace(" ", "_")
+
+
+def is_chosen_figure_task(question: str, notes: list[str]) -> bool:
+    """True only when the user asked to pick one number among competing figures."""
+    return bool(_CHOOSE_ONE.search(" ".join([question, *notes])))
+
+
+def is_name_n_ranking(question: str, notes: list[str] | None = None) -> bool:
+    """True when the user asked to name or rank a list, not pick one winner."""
+    return bool(_NAME_N.search(" ".join([question, *(notes or [])])))
+
+
+def asks_which_wins(question: str, notes: list[str] | None = None) -> bool:
+    """True for which/highest/versus questions that are not a top-N list."""
+    if is_name_n_ranking(question, notes):
+        return False
+    return bool(_WHICH_WINS.search(" ".join([question, *(notes or [])])))
+
+
+def apply_compare_rank_contract(
+    specification: QuestionSpecification,
+    question: str,
+    notes: list[str],
+) -> QuestionSpecification:
+    """Python owns comparison vs ranking when the specifier underspecifies."""
+    ranking = bool(
+        specification.ranking
+        or specification.question_type == "ranking"
+        or is_name_n_ranking(question, notes)
+    )
+    comparison = (not ranking) and (
+        specification.comparison
+        or specification.question_type == "comparison"
+        or asks_which_wins(question, notes)
+    )
+    update: dict[str, object] = {}
+    if ranking and not specification.ranking:
+        update["ranking"] = True
+        if specification.question_type not in {"ranking"}:
+            update["question_type"] = "ranking"
+    if comparison and not specification.comparison:
+        update["comparison"] = True
+        if specification.question_type not in {"comparison", "ranking"}:
+            update["question_type"] = "comparison"
+    if update:
+        specification = specification.model_copy(update=update)
+    return rewrite_comparison_winner_fields(specification, question, notes)
+
+
+def rewrite_comparison_winner_fields(
+    specification: QuestionSpecification,
+    question: str,
+    notes: list[str],
+) -> QuestionSpecification:
+    """Comparison required fields are winners, not every candidate's stats."""
+    if specification.ranking or is_name_n_ranking(question, notes):
+        return specification
+    if not (specification.comparison or asks_which_wins(question, notes)):
+        return specification
+    joined = " ".join(_field_key(field) for field in specification.required_fields)
+    if any(token in joined for token in ("highest", "lowest", "winner", "larger")):
+        return specification
+    metrics: list[str] = []
+    seen: set[str] = set()
+    for field in specification.required_fields:
+        key = _field_key(field)
+        if key in {"company_name", "company", "name"} or key.endswith("_company"):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        metrics.append(field.strip())
+    if len(metrics) < 2:
+        return specification
+    winners: list[str] = []
+    for metric in metrics[:2]:
+        winners.append(f"highest {metric} company")
+        winners.append(f"highest {metric}")
+    return specification.model_copy(
+        update={"required_fields": winners, "comparison": True}
+    )
+
+
+def drop_unrequested_chosen_fields(
+    specification: QuestionSpecification,
+    question: str,
+    notes: list[str],
+) -> QuestionSpecification:
+    """Python owns this: the model must not invent chosen_figure_* on Q05/Q09."""
+    if is_chosen_figure_task(question, notes):
+        return specification
+    kept = [
+        field
+        for field in specification.required_fields
+        if _field_key(field) not in _CHOSEN_FIELDS
+    ]
+    if not kept or kept == specification.required_fields:
+        return specification
+    return specification.model_copy(update={"required_fields": kept})
+
+
+_CITATION_FIELDS = {"citation", "cite", "source", "source_url", "cited_page"}
+
+
+def drop_unrequested_citation_fields(
+    specification: QuestionSpecification,
+    question: str,
+    notes: list[str],
+) -> QuestionSpecification:
+    """'Cite one page' is not its own required field."""
+    text = " ".join([question, *notes]).casefold()
+    if re.search(r"\bwhat (?:is|was) the (?:citation|source url|cited page)\b", text):
+        return specification
+    kept = [
+        field
+        for field in specification.required_fields
+        if _field_key(field) not in _CITATION_FIELDS
+    ]
+    if not kept or kept == specification.required_fields:
+        return specification
+    return specification.model_copy(update={"required_fields": kept})
 
 
 def specify_question(
@@ -65,15 +218,28 @@ def specify_question(
         user_prompt=user_prompt,
         schema=QuestionSpecification,
     )
+    specification = apply_compare_rank_contract(
+        drop_unrequested_citation_fields(
+            drop_unrequested_chosen_fields(
+                extracted.value,
+                cleaned_question,
+                cleaned_notes,
+            ),
+            cleaned_question,
+            cleaned_notes,
+        ),
+        cleaned_question,
+        cleaned_notes,
+    )
     specified = SpecifiedQuestion(
         question=cleaned_question,
         notes=cleaned_notes,
-        specification=extracted.value,
+        specification=specification,
         # Always overwrite: even a ranking question starts with 5 pages.
         page_policy=page_policy_from_settings(settings),
         as_of_date=as_of,
         resolved_time_period=resolve_time_period(
-            extracted.value.time_period,
+            specification.time_period,
             settings.as_of_date,
         ),
     )

@@ -95,7 +95,7 @@ Increasing difficulty. Mixed industries. At least two reuse. One planted unsuppo
 
 1. Who is Titan Company's Managing Director in 2026? (kept)
 2. Who is Infosys's chief executive in office in 2026, and in which city is the company headquartered?
-3. **Hard / may fail:** two Indian IT firms with a published 2025–2026 headcount change (not a hiring target).
+3. Name the three Indian IT companies with the highest FY26 consolidated revenue, in rank order, with each revenue in rupees crore.
 4. **Reuse Infosys:** predecessor of the stored CEO, and the year the current CEO took over.
 5. Latest RBI repo rate and the 2026 MPC decision date.
 6. **Reuse Titan + cite a page:** confirm MD name and appointment date from an opened URL.

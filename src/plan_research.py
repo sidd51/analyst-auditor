@@ -18,7 +18,12 @@ from src.models import (
     SpecifiedQuestion,
 )
 from src.period import split_entities
-from src.specify import specify_question
+from src.specify import (
+    asks_which_wins,
+    is_chosen_figure_task,
+    is_name_n_ranking,
+    specify_question,
+)
 from src.trace import JsonlTracer
 
 # The planner only writes queries. It must not fetch pages or invent answers.
@@ -246,6 +251,35 @@ def asks_to_cite_a_page(specified: SpecifiedQuestion) -> bool:
     """Q08-style: a citation is required, so do not skip the verify query."""
     blob = " ".join([specified.question, *specified.notes]).casefold()
     return bool(re.search(r"\bcite\b", blob) and re.search(r"\bpage", blob))
+
+
+def blocks_memory_verify(specified: SpecifiedQuestion) -> bool:
+    """Reuse confirms a stored field. Compare, rank, and choose-among must search."""
+    spec = specified.specification
+    if spec.comparison or spec.ranking:
+        return True
+    if spec.question_type in {"comparison", "ranking"}:
+        return True
+    question = specified.question
+    notes = specified.notes
+    return (
+        is_chosen_figure_task(question, notes)
+        or asks_which_wins(question, notes)
+        or is_name_n_ranking(question, notes)
+    )
+
+
+def should_memory_verify(
+    specified: SpecifiedQuestion,
+    recalled: MemoryRecall,
+) -> bool:
+    """True only for a confirm-this-field short-circuit with stored URLs."""
+    if blocks_memory_verify(specified):
+        return False
+    return bool(
+        required_fields_are_known(specified, recalled)
+        and memory_verify_urls(specified, recalled.facts)
+    )
 
 
 def _canonical_field(field: str) -> str:

@@ -111,6 +111,7 @@
     .pill.ok { background: #e7f7ee; color: var(--ok); }
     .pill.warn { background: #fff4dc; color: var(--warn); }
     .pill.bad { background: #fde8eb; color: var(--bad); }
+    .pill.info { background: #eaf2ff; color: var(--info); }
     .pill.muted { background: #eef2f7; color: var(--muted); }
     .drawer {
       display: none;
@@ -190,8 +191,16 @@
       margin-bottom: 6px;
       opacity: 0.8;
     }
-    .card .t { font-weight: 650; }
-    .card .m { margin-top: 8px; font-size: 12px; opacity: 0.9; word-break: break-word; }
+    .card .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .card .head .k { margin-bottom: 0; }
+    .card .t { font-weight: 650; white-space: normal; word-break: break-word; }
+    .card .m { margin-top: 8px; font-size: 12px; opacity: 0.9; white-space: normal; word-break: break-word; }
     .card.ok {
       background: #e7f7ee;
       border-color: #b7e4c7;
@@ -212,6 +221,41 @@
       border-color: #bfd4f6;
       color: var(--info);
     }
+    .meta-row { margin-bottom: 8px; }
+    .card.meta {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      width: 100%;
+      background: #e8ebf0;
+      border-color: #cdd3dc;
+      color: #4a5564;
+      padding: 6px 13px;
+    }
+    .card.meta .k { margin-bottom: 0; }
+    .card.meta .t { font-weight: 600; font-size: 13px; }
+    .card.meta .m { margin-top: 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.62);
+      border-radius: 8px;
+      padding: 3px 8px;
+      font-weight: 650;
+    }
+    .url-row + .url-row { margin-top: 8px; }
+    .quote {
+      margin: 8px 0 0;
+      padding: 6px 10px;
+      border-left: 3px solid currentColor;
+      font-size: 12px;
+      font-weight: 450;
+      font-style: italic;
+      opacity: 0.92;
+    }
+    .src-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+    a.src { color: inherit; font-size: 12px; font-weight: 650; }
     .empty { color: var(--muted); margin: 0; padding: 4px 0 2px; }
     @media (max-width: 720px) {
       .metrics { grid-template-columns: 1fr; }
@@ -225,7 +269,7 @@
   <header>
     <p class="kicker">Analyst + Auditor</p>
     <h1>Evaluation</h1>
-    <p class="sub">Cold Q01 versus memory-verify Q06. Click a question for its pipeline.</p>
+    <p class="sub" id="subtitle">Cold search versus memory-verify. Click a question for its pipeline.</p>
   </header>
   <main>
     <section class="metrics" id="metrics"></section>
@@ -255,7 +299,10 @@
     function fmt(n) { return Number(n || 0).toLocaleString("en-IN"); }
     function rupee(n) { return "₹" + Number(n || 0).toFixed(2); }
     function sec(n) { return Number(n || 0).toFixed(1) + "s"; }
-    function drop(pct) { return pct == null ? "—" : "−" + pct + "%"; }
+    function drop(pct) {
+      if (pct == null) return "—";
+      return pct < 0 ? "+" + Math.abs(pct) + "%" : "−" + pct + "%";
+    }
     function esc(v) {
       return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
@@ -265,10 +312,20 @@
       return Boolean(row.recalled || row.skipped_queries || t.memory_verify);
     }
 
+    const coldId = m.cold_qid || "Q01";
+    const warmId = m.warm_qid || "Q06";
+    const sub = document.getElementById("subtitle");
+    if (sub) {
+      sub.textContent = "Cold " + coldId + " versus memory-verify " + warmId +
+        ". Click a question for its pipeline.";
+    }
     document.getElementById("metrics").innerHTML = [
-      metric("tokens", "Tokens", drop(m.token_drop_pct), fmt(m.q01_tokens) + " → " + fmt(m.q06_tokens)),
-      metric("cost", "Cost", drop(m.cost_drop_pct), rupee(m.q01_cost_inr) + " → " + rupee(m.q06_cost_inr)),
-      metric("time", "Time", drop(m.time_drop_pct), sec(m.q01_seconds) + " → " + sec(m.q06_seconds)),
+      metric("tokens", "Tokens", drop(m.token_drop_pct),
+        coldId + " " + fmt(m.q01_tokens) + " → " + warmId + " " + fmt(m.q06_tokens)),
+      metric("cost", "Cost", drop(m.cost_drop_pct),
+        coldId + " " + rupee(m.q01_cost_inr) + " → " + warmId + " " + rupee(m.q06_cost_inr)),
+      metric("time", "Time", drop(m.time_drop_pct),
+        coldId + " " + sec(m.q01_seconds) + " → " + warmId + " " + sec(m.q06_seconds)),
     ].join("");
 
     function metric(kind, label, value, note) {
@@ -341,22 +398,23 @@
 
     function specifyCards(row) {
       const t = row.trace || {};
-      return grid([
-        ...((t.entities || []).map((x) => card("info", "Entity", x, ""))),
-        ...((t.required_fields || []).map((x) => card("info", "Field", x, ""))),
-      ], "No specification in this trace.");
+      const cards = [];
+      if ((t.entities || []).length) cards.push(listCard("info", "Entities", t.entities));
+      if ((t.required_fields || []).length) cards.push(listCard("info", "Fields", t.required_fields));
+      return grid(cards, "No specification in this trace.");
     }
     function memoryCards(row) {
       const t = row.trace || {};
-      return grid([
-        card(t.memory_verify ? "ok" : (memoryUsed(row) ? "ok" : "warn"), "Path",
-          t.memory_verify ? "Memory verify" : (memoryUsed(row) ? "Recalled, then searched" : "Full search"),
-          t.memory_verify
-            ? "Reopened stored URLs. No plan, search, or wave 2."
-            : (memoryUsed(row) ? (row.recalled || 0) + " recalled · " + (row.skipped_queries || 0) + " queries skipped" : "Required fields were not all known.")),
-        ...(t.known_fields || []).slice(0, 6).map((x) => card("ok", "Known field", x, "")),
-        ...(t.stored_urls || []).map((u) => card("info", "Stored URL", host(u), u)),
-      ], "No memory event.");
+      const verify = t.memory_verify;
+      const used = memoryUsed(row);
+      const pathTitle = verify ? "Memory verify" : (used ? "Recalled, then searched" : "Full search");
+      const pathMore = verify
+        ? "Reopened stored URLs. No plan, search, or wave 2."
+        : (used ? (row.recalled || 0) + " recalled · " + (row.skipped_queries || 0) + " queries skipped" : "Required fields were not all known.");
+      const extras = [];
+      if ((t.known_fields || []).length) extras.push(listCard("ok", "Known fields", t.known_fields));
+      if ((t.stored_urls || []).length) extras.push(urlCard("info", "Stored URLs", t.stored_urls));
+      return metaCard("Path taken", pathTitle, pathMore) + grid(extras, "");
     }
     function searchCards(row) {
       const t = row.trace || {};
@@ -364,33 +422,32 @@
     }
     function pagesCards(row) {
       const t = row.trace || {};
-      const extra = (t.pages_used != null)
-        ? [card("info", "Budget", t.pages_used + " pages", (t.passages_selected || 0) + " passages")]
-        : [];
+      const budget = (t.pages_used != null)
+        ? metaCard("Budget", t.pages_used + (t.pages_used === 1 ? " page" : " pages"), (t.passages_selected || 0) + " passages")
+        : "";
       const fetches = (t.fetches || []).map((f) => card(f.ok ? "ok" : "bad", f.ok ? "Fetched" : "Failed", f.title || host(f.url), f.url));
-      return grid(extra.concat(fetches), "No pages fetched.");
+      return budget + grid(fetches, "No pages fetched.");
     }
     function analystCards(row) {
       const t = row.trace || {};
-      const cards = (t.claims || []).map((c) => card("info", c.claim_id + " · " + c.field, c.text, ""));
-      (t.unanswered || []).forEach((u) => cards.push(card("warn", "Unanswered", u.field, u.reason)));
-      if (t.planted) cards.push(card("bad", "Planted " + t.planted.claim_id, t.planted.text, "False claim injected for the auditor."));
-      return grid(cards, "No analyst claims.");
+      return grid((t.claims || []).map((c) => claimCard("info", c)), "No analyst claims.");
     }
     function crossCheckCards(row) {
       const t = row.trace || {};
-      const cards = [];
-      if (t.cross_check_skipped) {
-        cards.push(card("warn", "Path", "Skipped independent search", "Memory verify: no second-source search."));
+      if (t.cross_check_skipped || t.memory_verify) {
+        return metaCard("Path taken", "Skipped independent search", "Memory verify: no second-source search.");
       }
+      const cards = [];
       (t.cross_check || []).forEach((v) => {
         const kind = v.status === "corroborated" ? "ok"
           : v.status === "conflicting" ? "bad"
           : v.status === "skipped_multi_source" ? "info"
           : "warn";
-        const more = [host(v.independent_url), v.evidence_origin && v.evidence_origin !== "none" ? v.evidence_origin : ""]
-          .filter(Boolean).join(" · ");
-        cards.push(card(kind, v.claim_id + " · " + v.status, v.reason || v.status, more));
+        const label = v.status === "corroborated" ? "Corroborated"
+          : v.status === "conflicting" ? "Conflicting"
+          : v.status === "skipped_multi_source" ? "Multi-source skipped"
+          : "Single source";
+        cards.push(verdictCard(kind, v.claim_id, label, v.reason || "", v.independent_url ? [v.independent_url] : []));
       });
       return grid(cards, "No cross-check in this trace.");
     }
@@ -398,13 +455,24 @@
       const t = row.trace || {};
       return grid((t.auditor || []).map((a) => {
         const kind = a.verdict === "SUPPORTED" ? "ok" : a.verdict === "UNSUPPORTED" ? "bad" : "warn";
-        return card(kind, a.claim_id + " · " + a.verdict, a.reason || a.verdict, "");
+        return verdictCard(kind, a.claim_id, a.verdict, a.reason || "", a.urls || []);
       }), "No auditor verdicts.");
     }
     function gateCards(row) {
       const t = row.trace || {};
-      const cards = (t.accepted || []).map((a) => card("ok", a.field, a.text, (a.sources || []).join(" · ")));
-      (t.missing || []).forEach((miss) => cards.push(card("warn", "Missing · " + miss.field, miss.reason || "unanswered", "")));
+      const disputedKeys = {};
+      (t.disputed || []).forEach((d) => { disputedKeys[String(d.field || "").trim().toLowerCase()] = true; });
+      const cards = (t.accepted || []).map((a) =>
+        '<article class="card ok"><div class="k">' + esc(pretty(a.field)) + '</div><div class="t">' +
+        esc(a.text) + "</div>" + sourceLinks(a.urls) + "</article>"
+      );
+      (t.disputed || []).forEach((d) => {
+        cards.push(verdictCard("warn", d.field, "Disputed", d.reason || "", d.urls || []));
+      });
+      (t.missing || []).forEach((miss) => {
+        if (disputedKeys[String(miss.field || "").trim().toLowerCase()]) return;
+        cards.push(card("warn", "Missing · " + miss.field, miss.reason || "unanswered", ""));
+      });
       if (row.qid === "Q01" && DATA.naive && DATA.naive.answer) {
         cards.push(card("warn", "Naive one-shot", DATA.naive.answer, rupee(DATA.naive.cost_inr) + " · " + sec(DATA.naive.wall_seconds)));
       }
@@ -412,12 +480,46 @@
     }
 
     function grid(cards, empty) {
-      if (!cards || !cards.length) return '<p class="empty">' + esc(empty || "Nothing here.") + "</p>";
+      if (!cards || !cards.length) {
+        return empty ? '<p class="empty">' + esc(empty) + "</p>" : "";
+      }
       return '<div class="cards">' + cards.join("") + "</div>";
     }
     function card(cls, k, t, more) {
       return '<article class="card ' + cls + '"><div class="k">' + esc(pretty(k)) + '</div><div class="t">' +
         esc(t) + "</div>" + (more ? '<div class="m">' + esc(more) + "</div>" : "") + "</article>";
+    }
+    function metaCard(k, t, more) {
+      return '<div class="meta-row">' + card("meta", k, t, more) + "</div>";
+    }
+    function listCard(cls, k, items) {
+      const chips = items.map((x) => '<span class="chip">' + esc(pretty(x)) + "</span>").join("");
+      return '<article class="card ' + cls + '"><div class="k">' + esc(k) + '</div><div class="chips">' +
+        chips + "</div></article>";
+    }
+    function urlCard(cls, k, urls) {
+      const rows = urls.map((u) => '<div class="url-row"><div class="t">' + esc(host(u)) +
+        '</div><div class="m">' + esc(u) + "</div></div>").join("");
+      return '<article class="card ' + cls + '"><div class="k">' + esc(k) + "</div>" + rows + "</article>";
+    }
+    function claimCard(cls, c) {
+      const label = [c.claim_id, pretty(c.field)].filter(Boolean).join(" · ");
+      const quote = c.quote ? '<blockquote class="quote">' + esc(c.quote) + "</blockquote>" : "";
+      return '<article class="card ' + cls + '"><div class="k">' + esc(label) + '</div><div class="t">' +
+        esc(c.text || "") + "</div>" + quote + sourceLinks(c.urls) + "</article>";
+    }
+    function sourceLinks(urls) {
+      const links = (urls || []).filter(Boolean).map((u) =>
+        '<a class="src" href="' + esc(u) + '" target="_blank" rel="noreferrer">' + esc(host(u)) + "</a>"
+      ).join("");
+      return links ? '<div class="src-list">' + links + "</div>" : "";
+    }
+    function verdictCard(cls, k, t, reason, urls) {
+      const pillKind = cls === "ok" || cls === "warn" || cls === "bad" || cls === "info" ? cls : "muted";
+      return '<article class="card ' + cls + '"><div class="head"><div class="k">' + esc(pretty(k)) +
+        "</div>" + pill(pillKind, t) + "</div>" +
+        (reason ? '<div class="m">' + esc(reason) + "</div>" : "") +
+        sourceLinks(urls) + "</article>";
     }
     function host(url) {
       try { return new URL(url).host; } catch (e) { return url; }
